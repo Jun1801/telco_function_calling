@@ -1,0 +1,766 @@
+[
+  {
+    "tool_name": "activate_esim",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "eq",
+        "value": "active",
+        "message": "subscriber_status must be active"
+      },
+      {
+        "path": "subscriber.esim_supported",
+        "op": "eq",
+        "value": true,
+        "message": "device must support esim"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.activate_esim.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "high",
+    "side_effects": [
+      "activate_esim_profile",
+      "send_sms_notification"
+    ],
+    "postconditions": [
+      "subscriber.esim_active == true"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "abstain_or_ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must be active",
+          "device must support esim"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "add_data_package",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "eq",
+        "value": "active",
+        "message": "subscriber_status must be active"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.add_data_package.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "medium",
+    "side_effects": [
+      "change_subscription_addon",
+      "charge_fee",
+      "send_sms_notification"
+    ],
+    "postconditions": [
+      "addon_package_queued"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must be active"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "apply_late_fee_waiver",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.subscription_type",
+        "op": "eq",
+        "value": "postpaid",
+        "message": "subscription_type must be postpaid"
+      },
+      {
+        "path": "subscriber.outstanding_balance",
+        "op": "gte",
+        "value": 1,
+        "message": "outstanding_balance must be positive"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.apply_late_fee_waiver.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "high",
+    "side_effects": [
+      "adjust_invoice",
+      "audit_financial_change"
+    ],
+    "postconditions": [
+      "invoice.adjustment_created"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "abstain_or_ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscription_type must be postpaid",
+          "outstanding_balance must be positive"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "cancel_subscription",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "eq",
+        "value": "active",
+        "message": "subscriber_status must be active"
+      },
+      {
+        "path": "subscriber.outstanding_balance",
+        "op": "eq",
+        "value": 0,
+        "message": "outstanding_balance must be 0"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.cancel_subscription.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "high",
+    "side_effects": [
+      "cancel_subscription",
+      "finalize_billing",
+      "send_sms_notification"
+    ],
+    "postconditions": [
+      "subscriber.status == cancelled"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "abstain_or_ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must be active",
+          "outstanding_balance must be 0"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "change_plan",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "eq",
+        "value": "active",
+        "message": "subscriber_status must be active"
+      },
+      {
+        "path": "args.new_plan",
+        "op": "ne_path",
+        "value": "subscriber.plan_id",
+        "message": "new_plan must differ from current plan"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.change_plan.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "high",
+    "side_effects": [
+      "change_subscription",
+      "charge_fee",
+      "send_sms_notification"
+    ],
+    "postconditions": [
+      "subscription.plan_id == args.new_plan"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "abstain_or_ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must be active",
+          "new_plan must differ from current plan"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "disable_roaming",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "ne",
+        "value": "cancelled",
+        "message": "subscriber_status must not be cancelled"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.disable_roaming.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "medium",
+    "side_effects": [
+      "change_roaming_status",
+      "send_sms_notification"
+    ],
+    "postconditions": [
+      "subscriber.roaming_enabled == false"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must not be cancelled"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "enable_roaming",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "eq",
+        "value": "active",
+        "message": "subscriber_status must be active"
+      },
+      {
+        "path": "subscriber.subscription_type",
+        "op": "eq",
+        "value": "postpaid",
+        "message": "subscription_type must be postpaid"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.enable_roaming.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "high",
+    "side_effects": [
+      "change_roaming_status",
+      "charge_fee",
+      "send_sms_notification"
+    ],
+    "postconditions": [
+      "subscriber.roaming_enabled == true"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "abstain_or_ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must be active",
+          "subscription_type must be postpaid"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "increase_credit_limit",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.subscription_type",
+        "op": "eq",
+        "value": "postpaid",
+        "message": "subscription_type must be postpaid"
+      },
+      {
+        "path": "subscriber.status",
+        "op": "eq",
+        "value": "active",
+        "message": "subscriber_status must be active"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.increase_credit_limit.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "high",
+    "side_effects": [
+      "update_credit_limit",
+      "audit_financial_change"
+    ],
+    "postconditions": [
+      "subscriber.credit_limit == args.new_limit"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "abstain_or_ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscription_type must be postpaid",
+          "subscriber_status must be active"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "open_support_ticket",
+    "requires_customer_verified": false,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "ne",
+        "value": "cancelled",
+        "message": "subscriber_status must not be cancelled"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.open_support_ticket.v1.0",
+    "permission_required": null,
+    "risk_level": "low",
+    "side_effects": [
+      "create_ticket"
+    ],
+    "postconditions": [
+      "ticket.status == open"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must not be cancelled"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "pay_bill",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "ne",
+        "value": "cancelled",
+        "message": "subscriber_status must not be cancelled"
+      },
+      {
+        "path": "args.amount",
+        "op": "gte",
+        "value": 1,
+        "message": "amount must be positive"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.pay_bill.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "medium",
+    "side_effects": [
+      "update_balance",
+      "audit_payment"
+    ],
+    "postconditions": [
+      "subscriber.outstanding_balance reduced"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must not be cancelled",
+          "amount must be positive"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "register_autopay",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.subscription_type",
+        "op": "eq",
+        "value": "postpaid",
+        "message": "subscription_type must be postpaid"
+      },
+      {
+        "path": "subscriber.status",
+        "op": "eq",
+        "value": "active",
+        "message": "subscriber_status must be active"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.register_autopay.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "high",
+    "side_effects": [
+      "store_payment_token",
+      "enable_autopay"
+    ],
+    "postconditions": [
+      "autopay.enabled == true"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "abstain_or_ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscription_type must be postpaid",
+          "subscriber_status must be active"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "replace_sim",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "eq",
+        "value": "active",
+        "message": "subscriber_status must be active"
+      },
+      {
+        "path": "subscriber.lost_sim_reported",
+        "op": "eq",
+        "value": true,
+        "message": "lost_sim_reported must be true"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.replace_sim.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "high",
+    "side_effects": [
+      "create_fulfillment_order",
+      "send_sms_notification"
+    ],
+    "postconditions": [
+      "sim_replacement_order_created"
+    ],
+    "tool_dependencies": [
+      "report_lost_sim"
+    ],
+    "replacement_tool": null,
+    "failure_action": "abstain_or_ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must be active",
+          "lost_sim_reported must be true"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "report_lost_sim",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "in",
+        "value": [
+          "active",
+          "suspended"
+        ],
+        "message": "subscriber_status must be active or suspended"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.report_lost_sim.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "medium",
+    "side_effects": [
+      "create_security_flag",
+      "send_sms_notification"
+    ],
+    "postconditions": [
+      "subscriber.lost_sim_reported == true"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must be active or suspended"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "resume_line",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "eq",
+        "value": "suspended",
+        "message": "subscriber_status must be suspended"
+      },
+      {
+        "path": "subscriber.outstanding_balance",
+        "op": "eq",
+        "value": 0,
+        "message": "outstanding_balance must be 0"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.resume_line.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "high",
+    "side_effects": [
+      "change_line_status",
+      "send_sms_notification"
+    ],
+    "postconditions": [
+      "subscriber.status == active"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "abstain_or_ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must be suspended",
+          "outstanding_balance must be 0"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "send_otp",
+    "requires_customer_verified": false,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "ne",
+        "value": "cancelled",
+        "message": "subscriber_status must not be cancelled"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.send_otp.v1.0",
+    "permission_required": null,
+    "risk_level": "medium",
+    "side_effects": [
+      "send_otp"
+    ],
+    "postconditions": [
+      "otp_delivery_requested"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must not be cancelled"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "suspend_line",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "eq",
+        "value": "active",
+        "message": "subscriber_status must be active"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.suspend_line.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "high",
+    "side_effects": [
+      "change_line_status",
+      "send_sms_notification"
+    ],
+    "postconditions": [
+      "subscriber.status == suspended"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "abstain_or_ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must be active"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "transfer_ownership",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "eq",
+        "value": "active",
+        "message": "subscriber_status must be active"
+      },
+      {
+        "path": "subscriber.outstanding_balance",
+        "op": "eq",
+        "value": 0,
+        "message": "outstanding_balance must be 0"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.transfer_ownership.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "high",
+    "side_effects": [
+      "change_account_owner",
+      "audit_sensitive_change"
+    ],
+    "postconditions": [
+      "subscriber.owner_id == args.new_owner_id"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "abstain_or_ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must be active",
+          "outstanding_balance must be 0"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "unblock_premium_sms",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "eq",
+        "value": "active",
+        "message": "subscriber_status must be active"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.unblock_premium_sms.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "high",
+    "side_effects": [
+      "update_service_bar"
+    ],
+    "postconditions": [
+      "premium_sms_blocked == false"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "abstain_or_ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must be active"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "update_billing_email",
+    "requires_customer_verified": true,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "ne",
+        "value": "cancelled",
+        "message": "subscriber_status must not be cancelled"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.update_billing_email.v1.0",
+    "permission_required": "customer_verified",
+    "risk_level": "medium",
+    "side_effects": [
+      "update_customer_profile",
+      "send_email_notification"
+    ],
+    "postconditions": [
+      "subscriber.billing_email == args.email"
+    ],
+    "tool_dependencies": [],
+    "replacement_tool": null,
+    "failure_action": "ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must not be cancelled"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  },
+  {
+    "tool_name": "verify_otp",
+    "requires_customer_verified": false,
+    "preconditions": [
+      {
+        "path": "subscriber.status",
+        "op": "ne",
+        "value": "cancelled",
+        "message": "subscriber_status must not be cancelled"
+      }
+    ],
+    "version": "1.0",
+    "contract_id": "contract.verify_otp.v1.0",
+    "permission_required": null,
+    "risk_level": "medium",
+    "side_effects": [
+      "verify_identity"
+    ],
+    "postconditions": [
+      "identity_verification_updated"
+    ],
+    "tool_dependencies": [
+      "send_otp"
+    ],
+    "replacement_tool": null,
+    "failure_action": "ask_clarification",
+    "examples": [
+      {
+        "valid_when": [
+          "subscriber_status must not be cancelled"
+        ],
+        "invalid_feedback": "Return structured feedback and do not execute if any precondition fails."
+      }
+    ]
+  }
+]

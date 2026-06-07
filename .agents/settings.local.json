@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(venv/Scripts/python.exe -c ' *)",
+      "PowerShell(cd \"D:\\\\Study Documents\\\\Other subjects\\\\lead-bhyt-chatbot\"; $env:PYTHONIOENCODING=\"utf-8\"; .\\\\venv\\\\Scripts\\\\python.exe check_chunk.py)"
+    ]
+  }
+}

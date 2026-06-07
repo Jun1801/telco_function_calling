@@ -1,0 +1,1 @@
+"""Mock telco API executor."""
