@@ -68,6 +68,9 @@ def _select_tools(sample: dict[str, Any], tool_registry: ToolRegistry) -> list[d
         call = sample.get(key)
         if call:
             names.add(call["tool_name"])
+    checker_call = sample.get("checker_call")
+    if checker_call:
+        names.add(checker_call["tool_name"])
     for call in sample.get("gold_calls") or []:
         names.add(call["tool_name"])
     for call in sample.get("gold_steps") or []:

@@ -58,6 +58,10 @@ class MultiAgentInteractiveDialogGenerator:
             sample["gold_calls"] = copy.deepcopy(spec.gold_calls)
         if spec.gold_steps:
             sample["gold_steps"] = copy.deepcopy(spec.gold_steps)
+        if spec.checker_call:
+            sample["checker_call"] = copy.deepcopy(spec.checker_call)
+        if spec.checker_expected_status:
+            sample["checker_expected_status"] = spec.checker_expected_status
         return sample
 
     def _add_masking_metadata(self, samples: list[dict[str, Any]]) -> None:
@@ -86,7 +90,8 @@ class DualLayerValidationProcess:
             state = MockTelcoApi.from_file(self.data_dir / "mock_telco_db.json")
             prediction = sample.get("prediction") or {"action": "call_function", "call": sample["call"]}
             result = evaluate_prediction(sample, prediction, self.tool_registry, state, self.contract_registry)
-            if self._passes_expected(sample, result):
+            checker_result = self._check_negative_if_needed(sample)
+            if self._passes_expected(sample, result) and checker_result is not None:
                 enriched = copy.deepcopy(sample)
                 enriched["toolace_validation"] = {
                     "reward_soft": result["reward_soft"],
@@ -94,14 +99,37 @@ class DualLayerValidationProcess:
                     "reward_total": result["reward_total"],
                     "machine_status": result["feedback"].get("machine_status"),
                     "metrics": result["metrics"],
+                    "checker_status": checker_result.get("status"),
                 }
                 verified.append(enriched)
         return verified
 
     def _passes_expected(self, sample: dict[str, Any], result: dict[str, Any]) -> bool:
-        if "expected_status" in sample:
+        if sample.get("expected_action") == "call_function" and "expected_status" in sample:
             return result["feedback"].get("machine_status") == sample["expected_status"]
         return result["reward_strict"] == 1.0
+
+    def _check_negative_if_needed(self, sample: dict[str, Any]) -> dict[str, Any] | None:
+        checker_call = sample.get("checker_call")
+        if checker_call is None:
+            return {}
+        state = MockTelcoApi.from_file(self.data_dir / "mock_telco_db.json")
+        score = evaluate_prediction(
+            {
+                **sample,
+                "expected_action": "call_function",
+                "gold_call": checker_call,
+                "expected_status": sample["checker_expected_status"],
+            },
+            {"action": "call_function", "call": checker_call},
+            self.tool_registry,
+            state,
+            self.contract_registry,
+        )
+        status = score["feedback"].get("machine_status")
+        if status != sample["checker_expected_status"]:
+            return None
+        return {"status": status}
 
 
 class TelcoToolACEMiniPipeline:

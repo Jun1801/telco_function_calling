@@ -19,6 +19,8 @@ class ScenarioSpec:
     gold_calls: list[dict[str, Any]] | None = None
     gold_steps: list[dict[str, Any]] | None = None
     scenario_family: str = "single_step_valid"
+    checker_call: dict[str, Any] | None = None
+    checker_expected_status: str | None = None
 
 
 def call_spec(
@@ -49,4 +51,55 @@ def call_spec(
         gold_calls=gold_calls,
         gold_steps=gold_steps,
         scenario_family=scenario_family,
+    )
+
+
+def ask_clarification_spec(
+    scenario_id: str,
+    split: str,
+    scenario: str,
+    instruction: str,
+    missing_slots: list[str],
+    checker_call: dict[str, Any] | None = None,
+    checker_expected_status: str | None = None,
+    customer_verified: bool = True,
+    scenario_family: str = "missing_slot",
+) -> ScenarioSpec:
+    return ScenarioSpec(
+        scenario_id=scenario_id,
+        split=split,
+        scenario=scenario,
+        instruction=instruction,
+        customer_verified=customer_verified,
+        expected_action="ask_clarification",
+        prediction={"action": "ask_clarification", "asked_slots": missing_slots},
+        missing_slots=missing_slots,
+        scenario_family=scenario_family,
+        checker_call=checker_call,
+        checker_expected_status=checker_expected_status,
+    )
+
+
+def abstain_spec(
+    scenario_id: str,
+    split: str,
+    scenario: str,
+    instruction: str,
+    reason: str,
+    checker_call: dict[str, Any] | None = None,
+    checker_expected_status: str | None = None,
+    customer_verified: bool = True,
+    scenario_family: str = "abstention",
+) -> ScenarioSpec:
+    return ScenarioSpec(
+        scenario_id=scenario_id,
+        split=split,
+        scenario=scenario,
+        instruction=instruction,
+        customer_verified=customer_verified,
+        expected_action="abstain",
+        prediction={"action": "abstain", "reason": reason},
+        scenario_family=scenario_family,
+        checker_call=checker_call,
+        checker_expected_status=checker_expected_status,
     )

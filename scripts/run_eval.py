@@ -40,7 +40,9 @@ def main() -> None:
                 }
                 result = evaluate_prediction(sample, prediction, tool_registry, state, contract_registry)
                 machine_status = result["feedback"].get("machine_status")
-                if "expected_status" in sample:
+                if "checker_expected_status" in sample:
+                    is_match = result["reward_strict"] == 1.0 and sample["toolace_validation"]["checker_status"] == sample["checker_expected_status"]
+                elif "expected_status" in sample:
                     is_match = machine_status == sample["expected_status"]
                 else:
                     is_match = result["reward_strict"] == 1.0

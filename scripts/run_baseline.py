@@ -186,7 +186,7 @@ def _mock_model_output(sample: dict[str, Any], backend: str) -> str:
 def _write_error_report(path: Path, records: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     total = len(records)
-    strict_success = sum(1 for item in records if item["metrics"].get("task_success_rate") == 1.0)
+    strict_success = sum(1 for item in records if item["reward"] == 1.0)
     parse_errors = sum(1 for item in records if item["prediction"].get("parse_error"))
     by_split: dict[str, list[float]] = {}
     for item in records:
@@ -195,7 +195,7 @@ def _write_error_report(path: Path, records: list[dict[str, Any]]) -> None:
         "# Prompt-Only Baseline Error Analysis",
         "",
         f"- total_records: {total}",
-        f"- task_success_matches: {strict_success}/{total}",
+        f"- strict_success: {strict_success}/{total}",
         f"- parse_errors: {parse_errors}",
         "",
         "## Reward By Split",

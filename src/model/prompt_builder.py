@@ -42,6 +42,9 @@ def _select_prompt_tools(sample: dict[str, Any], tool_registry: ToolRegistry, ma
         call = sample.get(call_key)
         if call and call["tool_name"] not in names:
             names.append(call["tool_name"])
+    checker_call = sample.get("checker_call")
+    if checker_call and checker_call["tool_name"] not in names:
+        names.append(checker_call["tool_name"])
     for call in sample.get("gold_calls") or []:
         if call["tool_name"] not in names:
             names.append(call["tool_name"])
