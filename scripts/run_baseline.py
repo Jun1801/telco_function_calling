@@ -23,6 +23,7 @@ def main() -> None:
     parser.add_argument("--model", default="Qwen/Qwen2.5-Coder-7B-Instruct")
     parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--load-in-4bit", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--limit", type=int, help="Optional max number of eval samples.")
     parser.add_argument("--enable-thinking", action="store_true", help="Pass enable_thinking=True when the tokenizer supports it.")
     parser.add_argument("--output", default=str(ROOT / "reports" / "prompt_only_results.jsonl"))
@@ -79,6 +80,7 @@ def _build_generator(args: argparse.Namespace) -> Any:
         model_name=args.model,
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
+        load_in_4bit=args.load_in_4bit,
         enable_thinking=args.enable_thinking,
     )
 
@@ -97,23 +99,33 @@ class TransformersGenerator:
         model_name: str,
         max_new_tokens: int,
         temperature: float,
+        load_in_4bit: bool,
         enable_thinking: bool,
     ) -> None:
         try:
             import torch
-            from transformers import AutoModelForCausalLM, AutoTokenizer
+            from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
         except ImportError as error:
             raise SystemExit(
-                "The transformers backend requires torch and transformers. "
+                "The transformers backend requires torch, transformers, and bitsandbytes for 4-bit loading. "
                 "Install them in Colab before running this backend."
             ) from error
 
         self.torch = torch
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        quantization_config = None
+        if load_in_4bit:
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_use_double_quant=True,
+            )
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            torch_dtype="auto",
+            torch_dtype=torch.bfloat16,
             device_map="auto",
+            quantization_config=quantization_config,
             trust_remote_code=True,
         )
         self.max_new_tokens = max_new_tokens
