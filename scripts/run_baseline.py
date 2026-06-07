@@ -174,7 +174,9 @@ def _iter_eval_samples(data_dir: Path) -> list[dict[str, Any]]:
 def _mock_model_output(sample: dict[str, Any], backend: str) -> str:
     if backend == "mock_malformed":
         return "I think you should call the right tool, but this is not JSON."
-    if sample["expected_action"] == "call_function":
+    if sample["expected_action"] == "call_functions":
+        payload = {"action": "call_functions", "calls": sample.get("gold_steps") or sample.get("gold_calls") or []}
+    elif sample["expected_action"] == "call_function":
         payload = {"action": "call_function", "call": sample["gold_call"]}
     elif sample["expected_action"] == "ask_clarification":
         payload = {"action": "ask_clarification", "asked_slots": sample.get("missing_slots", [])}

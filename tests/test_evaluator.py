@@ -60,3 +60,47 @@ def test_evaluator_penalizes_contract_invalid_call() -> None:
     assert result["reward_strict"] == 0.0
     assert result["metrics"]["contract_validity"] == 0.0
     assert result["feedback"]["machine_status"] == "contract_invalid"
+
+
+def test_evaluator_scores_parallel_calls_without_order_requirement() -> None:
+    registry, contracts, state = make_inputs()
+    sample = {
+        "expected_action": "call_functions",
+        "gold_calls": [
+            {"tool_name": "get_balance", "arguments": {"customer_id": "C001"}},
+            {"tool_name": "get_usage", "arguments": {"customer_id": "C001"}},
+        ],
+        "expected_status": "ok",
+    }
+    prediction = {
+        "action": "call_functions",
+        "calls": [
+            {"tool_name": "get_usage", "arguments": {"customer_id": "C001"}},
+            {"tool_name": "get_balance", "arguments": {"customer_id": "C001"}},
+        ],
+    }
+
+    result = evaluate_prediction(sample, prediction, registry, state, contracts)
+
+    assert result["reward_strict"] == 1.0
+    assert result["metrics"]["function_selection_accuracy"] == 1.0
+    assert result["feedback"]["machine_status"] == "ok"
+
+
+def test_evaluator_scores_multi_step_calls_in_order() -> None:
+    registry, contracts, state = make_inputs()
+    sample = {
+        "expected_action": "call_functions",
+        "gold_steps": [
+            {"tool_name": "report_lost_sim", "arguments": {"customer_id": "C001"}},
+            {"tool_name": "replace_sim", "arguments": {"customer_id": "C001", "sim_type": "physical"}},
+        ],
+        "expected_status": "ok",
+        "customer_verified": True,
+    }
+    prediction = {"action": "call_functions", "calls": sample["gold_steps"]}
+
+    result = evaluate_prediction(sample, prediction, registry, state, contracts)
+
+    assert result["reward_strict"] == 1.0
+    assert result["feedback"]["machine_status"] == "ok"

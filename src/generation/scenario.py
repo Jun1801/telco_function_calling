@@ -38,16 +38,22 @@ def call_spec(
     scenario_family: str = "single_step_valid",
 ) -> ScenarioSpec:
     predicted_call = {"tool_name": tool_name, "arguments": arguments}
+    expected_action = "call_functions" if gold_calls or gold_steps else "call_function"
+    prediction = (
+        {"action": "call_functions", "calls": gold_steps or gold_calls or []}
+        if expected_action == "call_functions"
+        else {"action": "call_function", "call": predicted_call}
+    )
     return ScenarioSpec(
         scenario_id=scenario_id,
         split=split,
         scenario=scenario,
         instruction=instruction,
         customer_verified=customer_verified,
-        expected_action="call_function",
+        expected_action=expected_action,
         expected_status=expected_status,
         gold_call=gold_override or predicted_call,
-        prediction={"action": "call_function", "call": predicted_call},
+        prediction=prediction,
         gold_calls=gold_calls,
         gold_steps=gold_steps,
         scenario_family=scenario_family,

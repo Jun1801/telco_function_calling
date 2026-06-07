@@ -47,7 +47,10 @@ class MultiAgentInteractiveDialogGenerator:
             sample["expected_status"] = spec.expected_status
         if spec.gold_call is not None:
             sample["gold_call"] = copy.deepcopy(spec.gold_call)
-            sample["call"] = copy.deepcopy(spec.prediction["call"] if spec.prediction else spec.gold_call)
+            if spec.prediction and "call" in spec.prediction:
+                sample["call"] = copy.deepcopy(spec.prediction["call"])
+            else:
+                sample["call"] = copy.deepcopy(spec.gold_call)
         if spec.prediction is not None:
             sample["prediction"] = copy.deepcopy(spec.prediction)
         elif spec.gold_call is not None:

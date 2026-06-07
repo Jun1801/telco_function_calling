@@ -17,8 +17,10 @@ SYSTEM_PROMPT = """You are a contract-aware Telco function-calling agent.
 Read the user request, available tool schemas, and business constraints.
 Return only a JSON object with one of these actions:
 {"action":"call_function","call":{"tool_name":"...","arguments":{...}}}
+{"action":"call_functions","calls":[{"tool_name":"...","arguments":{...}}]}
 {"action":"ask_clarification","asked_slots":["..."]}
 {"action":"abstain","reason":"..."}
+Use call_functions for multi-step or parallel requests. Ask for clarification when a required or invalid argument can be corrected.
 Never call a tool if required arguments are missing, the tool is deprecated, or the contract is unsafe."""
 
 
@@ -52,6 +54,8 @@ def format_sample_for_sft(sample: dict[str, Any], tool_registry: ToolRegistry) -
 
 def _assistant_payload(sample: dict[str, Any]) -> dict[str, Any]:
     action = sample["expected_action"]
+    if action == "call_functions":
+        return {"action": "call_functions", "calls": sample.get("gold_steps") or sample.get("gold_calls") or []}
     if action == "call_function":
         return {"action": "call_function", "call": sample["gold_call"]}
     if action == "ask_clarification":
