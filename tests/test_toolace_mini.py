@@ -13,4 +13,5 @@ def test_toolace_mini_pipeline_generates_verified_samples() -> None:
     assert all("generation_profile" in sample for sample in samples)
     assert any(sample["scenario"] == "function_name_masking" for sample in samples)
     assert any(sample["scenario"] == "contract_violation" for sample in samples)
+    assert any(sample["split"] == "train" and sample["scenario"] == "target_contract_violation" for sample in samples)
     assert any(sample["scenario_family"] == "masking" for sample in samples)

@@ -1,0 +1,16 @@
+# Core dev/test
+pytest>=7.4,<9
+
+# Hugging Face data/model stack
+torch>=2.3
+transformers>=4.45
+datasets>=2.20
+accelerate>=0.34
+
+# Minimal SFT / QLoRA
+trl>=0.21
+peft>=0.13
+bitsandbytes>=0.43
+
+# Optional public dataset loading from Hugging Face Hub
+huggingface-hub>=0.24

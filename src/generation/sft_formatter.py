@@ -21,6 +21,7 @@ Return only a JSON object with one of these actions:
 {"action":"ask_clarification","asked_slots":["..."]}
 {"action":"abstain","reason":"..."}
 Use call_functions for multi-step or parallel requests. Ask for clarification when a required or invalid argument can be corrected.
+If a tool contract or business precondition is violated, abstain instead of asking for slots or calling helper tools.
 Never call a tool if required arguments are missing, the tool is deprecated, or the contract is unsafe."""
 
 

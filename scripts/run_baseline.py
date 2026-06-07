@@ -21,6 +21,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run prompt-only baseline.")
     parser.add_argument("--backend", default="mock_oracle", choices=["mock_oracle", "mock_malformed", "transformers"])
     parser.add_argument("--model", default="Qwen/Qwen2.5-Coder-7B-Instruct")
+    parser.add_argument("--adapter", help="Optional PEFT/LoRA adapter path to evaluate with the transformers backend.")
     parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--load-in-4bit", action=argparse.BooleanOptionalAction, default=True)
@@ -78,6 +79,7 @@ def _build_generator(args: argparse.Namespace) -> Any:
         return MockGenerator(args.backend)
     return TransformersGenerator(
         model_name=args.model,
+        adapter_path=args.adapter,
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
         load_in_4bit=args.load_in_4bit,
@@ -97,6 +99,7 @@ class TransformersGenerator:
     def __init__(
         self,
         model_name: str,
+        adapter_path: str | None,
         max_new_tokens: int,
         temperature: float,
         load_in_4bit: bool,
@@ -128,6 +131,13 @@ class TransformersGenerator:
             quantization_config=quantization_config,
             trust_remote_code=True,
         )
+        if adapter_path:
+            try:
+                from peft import PeftModel
+            except ImportError as error:
+                raise SystemExit("Evaluating a LoRA adapter requires peft. Install peft in the runtime.") from error
+            self.model = PeftModel.from_pretrained(self.model, adapter_path)
+        self.model.eval()
         self.max_new_tokens = max_new_tokens
         self.temperature = temperature
         self.enable_thinking = enable_thinking
