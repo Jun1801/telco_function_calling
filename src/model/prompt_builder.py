@@ -49,6 +49,12 @@ def _select_prompt_tools(sample: dict[str, Any], tool_registry: ToolRegistry, ma
         if call["tool_name"] not in names:
             names.append(call["tool_name"])
 
+    for fallback in _keyword_fallback_tools(sample["instruction"]):
+        if len(names) >= max_tools:
+            break
+        if fallback not in names:
+            names.append(fallback)
+
     for fallback in ["get_balance", "get_current_plan", "add_data_package", "open_support_ticket"]:
         if len(names) >= max_tools:
             break
@@ -73,6 +79,27 @@ def _select_prompt_tools(sample: dict[str, Any], tool_registry: ToolRegistry, ma
                 }
             )
     return tools
+
+
+def _keyword_fallback_tools(instruction: str) -> list[str]:
+    text = instruction.lower()
+    if "transfer ownership" in text:
+        return ["transfer_ownership"]
+    if "credit limit" in text:
+        return ["increase_credit_limit"]
+    if "autopay" in text:
+        return ["register_autopay", "remove_autopay"]
+    if "premium sms" in text:
+        return ["block_premium_sms", "unblock_premium_sms"]
+    if "roaming" in text:
+        return ["enable_roaming", "disable_roaming"]
+    if "support ticket" in text:
+        return ["open_support_ticket"]
+    if "data package" in text:
+        return ["add_data_package"]
+    if "sim" in text:
+        return ["report_lost_sim", "replace_sim", "activate_esim"]
+    return []
 
 
 def _compact_contract(contract: dict[str, Any] | None) -> dict[str, Any] | None:

@@ -136,9 +136,8 @@ class TransformersGenerator:
         template_kwargs = {
             "tokenize": False,
             "add_generation_prompt": True,
+            "enable_thinking": self.enable_thinking,
         }
-        if self.enable_thinking:
-            template_kwargs["enable_thinking"] = True
         try:
             text = self.tokenizer.apply_chat_template(prompt, **template_kwargs)
         except TypeError:
