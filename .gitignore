@@ -52,8 +52,8 @@ mlruns/
 
 # Large generated datasets / reports
 data/public_warmup_subset.jsonl
-data/sft_train.jsonl
-data/sft_eval.jsonl
+#data/sft_train.jsonl
+#data/sft_eval.jsonl
 reports/*.jsonl
 reports/*.csv
 
