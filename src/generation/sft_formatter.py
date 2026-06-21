@@ -53,10 +53,20 @@ def format_sample_for_sft(sample: dict[str, Any], tool_registry: ToolRegistry) -
     }
 
 
+_STEP_PLACEHOLDER = "<from_step_1>"
+
+
 def _assistant_payload(sample: dict[str, Any]) -> dict[str, Any]:
     action = sample["expected_action"]
     if action == "call_functions":
-        return {"action": "call_functions", "calls": sample.get("gold_steps") or sample.get("gold_calls") or []}
+        calls = sample.get("gold_steps") or sample.get("gold_calls") or []
+        # Multi-step gold must be ReAct-decomposed first; an unresolved placeholder
+        # would teach the model to emit the literal "<from_step_1>" token.
+        assert _STEP_PLACEHOLDER not in json.dumps(calls, ensure_ascii=False), (
+            f"Unresolved {_STEP_PLACEHOLDER} in gold for sample {sample.get('id')}; "
+            "run build_multistep_react before SFT formatting."
+        )
+        return {"action": "call_functions", "calls": calls}
     if action == "call_function":
         return {"action": "call_function", "call": sample["gold_call"]}
     if action == "ask_clarification":

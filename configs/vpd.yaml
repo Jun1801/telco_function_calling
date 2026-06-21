@@ -1,0 +1,54 @@
+# Phase 6 — VPD-lite (Contract-Guided Variational Policy Distillation)
+# Runs on Google Colab (CUDA) via HuggingFace PEFT + transformers
+
+model: Qwen/Qwen3-4B
+
+# Adapter paths (relative to project root or Google Drive mount)
+teacher_adapter: outputs/sft_mlx/qwen3-4b-feedback-sdft   # M3 starting point
+student_resume:  outputs/sft_mlx/qwen3-4b-feedback-sdft   # student also starts from M3
+output_dir:      outputs/vpd/qwen3-4b-vpd
+
+# LoRA — must match M3 adapter exactly
+lora_rank: 8
+lora_alpha: 20          # matches mlx-lm scale=20.0 (alpha/r = scale/r = 2.5)
+lora_dropout: 0.0
+lora_layers: [28, 29, 30, 31, 32, 33, 34, 35]   # last 8 layers of Qwen3-4B (36 total)
+target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# Rollouts
+rollouts_file: data/sdpo_rollouts.jsonl
+rollouts_per_prompt: 4
+temperature: 1.0
+max_generation_tokens: 256
+success_threshold: 1.0      # reward >= this → positive trajectory
+
+# VPD-lite schedule
+e_steps_per_cycle: 1        # E-step updates per cycle
+m_steps_per_cycle: 3        # M-steps per cycle (1 E : 3 M)
+epochs: 3
+
+# E-step (teacher update)
+learning_rate_e: 1e-5
+teacher_trust_region_beta: 0.02    # KL(teacher || student) penalty coefficient
+neg_loss_weight: 0.5               # weight for negative trajectory loss
+
+# M-step (student distillation)
+learning_rate_m: 5e-6
+distillation_top_k: 20
+distillation_alpha: 0.5     # JSD: 0.5=symmetric, 0=fwd-KL, 1=rev-KL
+is_clip: 2.0                # importance sampling clip
+
+# Progressive reward schedule (soft → strict)
+# 0–20% steps: lambda=0.3 (70% soft / 30% strict)
+# 20–50%: sigmoid transition
+# 50–100%: lambda=0.9 (10% soft / 90% strict)
+progressive_reward: true
+lambda_start: 0.3
+lambda_end: 0.9

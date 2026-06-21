@@ -9,6 +9,9 @@ class ContractIssue:
     code: str
     message: str
     path: str
+    expected: Any = None
+    actual: Any = None
+    op: str | None = None
 
 
 class ContractChecker:
@@ -26,7 +29,15 @@ class ContractChecker:
 
         issues: list[ContractIssue] = []
         if contract.get("requires_customer_verified") and not customer_verified:
-            issues.append(ContractIssue("permission_denied", "Customer identity must be verified", "customer_verified"))
+            issues.append(
+                ContractIssue(
+                    "permission_denied",
+                    "Customer identity must be verified",
+                    "customer_verified",
+                    expected=True,
+                    actual=False,
+                )
+            )
 
         context = {"subscriber": subscriber, "args": arguments}
         for rule in contract.get("preconditions", []):
@@ -38,6 +49,9 @@ class ContractChecker:
                         "precondition_failed",
                         rule.get("message", f"Precondition failed: {rule['path']}"),
                         rule["path"],
+                        expected=expected,
+                        actual=actual,
+                        op=rule["op"],
                     )
                 )
 

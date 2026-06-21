@@ -1,0 +1,25 @@
+{
+  "train_total": 5,
+  "train_by_family": {
+    "multi_step": 5
+  },
+  "eval_total": 70,
+  "eval_counts": {
+    "eval_real_seen": 19,
+    "eval_real_unseen": 3,
+    "eval_real_masked": 16,
+    "eval_real_missing_slot": 8,
+    "eval_real_multi_step": 18,
+    "eval_real_parallel": 6,
+    "eval_real_abstain": 0
+  },
+  "verifier_stats": {
+    "input": 16,
+    "schema_fail": 20,
+    "city_fail": 0,
+    "date_fail": 0,
+    "semantic_fail": 28,
+    "dedup": 0,
+    "kept": 16
+  }
+}

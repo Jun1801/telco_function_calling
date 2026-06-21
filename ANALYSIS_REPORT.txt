@@ -1,0 +1,527 @@
+================================================================================
+ANALYSIS: Function.xlsx vs tools.json Structure
+Telco Function Calling Training Data
+================================================================================
+
+1. ALL SHEET NAMES
+================================================================================
+
+Total: 4 sheets
+
+1. Function (PRIMARY - 994 data rows)
+   - Contains all telco API function definitions
+   - Vietnamese language documentation
+   - Training data source for natural language understanding
+
+2. location_code/object_code (REFERENCE - 52 data rows)
+   - Geographic and organizational code mappings
+   - Maps descriptive names to codes (e.g., "Hà Nội" → "HNI")
+   - Used as enum values in function parameters
+
+3. kpi_code (REFERENCE - 12 data rows)
+   - Key Performance Indicator definitions
+   - Maps KPI codes to Vietnamese meanings
+   - Used in specific network/performance functions
+
+4. unit_code (REFERENCE - 9 data rows)
+   - Organization/unit codes
+   - Maps codes to organization names (e.g., "VCS" → "Công ty An ninh mạng Viettel")
+   - Used for access control and filtering
+
+
+2. COLUMN HEADERS ON EACH SHEET
+================================================================================
+
+SHEET: "Function"
+───────────────────────────────────────────────────────────────────────────
+1. Tên hàm (Function Name)
+2. Mô tả (Description)
+3. Tham số (Parameters)
+4. Thông tin (Information)
+5. Ví dụ câu truy vấn (Query Examples)
+6. Ví dụ gọi hàm (Function Call Examples)
+
+SHEET: "location_code/object_code"
+───────────────────────────────────────────────────────────────────────────
+1. Nhóm (Category/Group)
+2. Giá trị khả dụng (Available Value Description)
+3. Mã (Code)
+
+SHEET: "kpi_code"
+───────────────────────────────────────────────────────────────────────────
+1. kpi_code (KPI Code Identifier)
+2. Ý nghĩa (Meaning/Definition)
+
+SHEET: "unit_code"
+───────────────────────────────────────────────────────────────────────────
+1. unit_code (Unit Code)
+2. Đơn vị/Công ty (Organization/Company Name)
+
+
+3. SAMPLE ROWS (FIRST 5-10) - FULL CONTENT
+================================================================================
+
+SHEET: "Function" - Row 1
+───────────────────────────────────────────────────────────────────────────
+Tên hàm: TRAM_NHA_MANG_KHAC_PROVINCE
+Mô tả: Tra cứu số trạm hiện có của 2 nhà mạng khác (Vinaphone và Mobifone) theo mã 
+       vị trí và thời gian
+Tham số: - location_code [string][require]: Mã vị trí (mã huyện/ tỉnh/ khu vực/ toàn quốc), 
+                                             Default: VNM
+         - from_date [string][require]: Thời gian bắt đầu truy vấn, định dạng YYYY-MM-DD, 
+                                        Default: 2026-06-01
+         - to_date [string][require]: Thời gian kết thúc truy vấn, định dạng YYYY-MM-DD
+         - data_level [string][optional]: Mức độ dữ liệu [day, week, month, quarter, year], 
+                                          Default: day
+
+Thông tin: {JSON structure containing name, description, parameters with full schema}
+
+Ví dụ câu truy vấn:
+  - Số trạm Vinaphone tại Hà Nội là bao nhiêu?
+  - Số trạm phát sóng của các nhà mạng khác tại Hà Nội ngày 21/12/2023?
+  - Số trạm Mobile tại Hà Nội từ ngày 1/1/2023 đến 3/3/2023?
+  - Thống kê số trạm đối thủ
+
+Ví dụ gọi hàm:
+  {
+    "from_date": "2026-06-01",
+    "to_date": "2026-06-30",
+    "data_level": "day",
+    "location_code": "HNI"
+  }
+
+───────────────────────────────────────────────────────────────────────────
+
+SHEET: "Function" - Row 2
+───────────────────────────────────────────────────────────────────────────
+Tên hàm: KE_HOACH_TRIEN_KHAI
+Mô tả: Tra cứu các kế hoạch và tiến độ triển khai hạ tầng mạng Viettel, kế hoạch bổ 
+       sung tài nguyên, kế hoạch phát sóng trạm theo mã vị trị và thời gian
+Tham số: - location_code [string][require]: Mã vị trí, Default: VNM
+         - from_date [string][require]: Thời gian bắt đầu, YYYY-MM-DD, Default: 2026-06-01
+         - to_date [string][require]: Thời gian kết thúc, YYYY-MM-DD
+         - data_level [string][optional]: [day, week, month, quarter, year], Default: day
+         - type_station [string][optional]: Loại trạm [4g_vtt, 5g_vtt, 2g, 3g, all]
+
+Thông tin: {JSON structure}
+
+Ví dụ câu truy vấn:
+  - Kế hoạch triển khai trạm mới năm 2024 của TP. HCM là bao nhiêu?
+  - Năm 2024 Hải Phòng phải triển khai bao nhiêu trạm mới?
+  - Số trạm cần triển khai của Đà Nẵng?
+
+Ví dụ gọi hàm:
+  {
+    "location_code": "HNI",
+    "from_date": "2025-04-01",
+    "to_date": "2025-04-30",
+    "data_level": "month",
+    "type_station": "4g_vtt"
+  }
+
+───────────────────────────────────────────────────────────────────────────
+
+SHEET: "Function" - Row 3
+───────────────────────────────────────────────────────────────────────────
+Tên hàm: VUNG_PHU_PROVINCE
+Mô tả: Tra cứu hiện trạng vùng phủ sóng của Viettel theo loại công nghệ 2G, 3G, 4G, 5G 
+       và theo mã vị trí
+
+Tham số: - location_code [string][require]: Mã vị trí, Default: VNM
+         - tech_type [string][require]: Loại công nghệ [2G, 3G, 4G, 5G, all], Default: all
+
+Ví dụ câu truy vấn:
+  - Cho tôi xem hiện trạng vùng phủ sóng 5G tại Hà Nội.
+  - Tình hình phủ sóng các công nghệ 2G, 3G, 4G và 5G trên toàn quốc hiện nay như thế nào?
+
+Ví dụ gọi hàm:
+  {
+    "location_code": "HNI",
+    "tech_type": "2G"
+  }
+
+───────────────────────────────────────────────────────────────────────────
+
+SHEET: "location_code/object_code" - Rows 1-10
+───────────────────────────────────────────────────────────────────────────
+Row 1: Nhóm=Toàn quốc, Giá trị khả dụng=Việt Nam, Mã=VNM
+Row 2: Nhóm=Toàn quốc, Giá trị khả dụng=toàn quốc, Mã=VNM
+Row 3: Nhóm=Khu vực, Giá trị khả dụng=Khu vực 1, Mã=KV1
+Row 4: Nhóm=Khu vực, Giá trị khả dụng=Khu vực miền Bắc, Mã=KV1
+Row 5: Nhóm=Khu vực, Giá trị khả dụng=Khu vực 2, Mã=KV2
+Row 6: Nhóm=Khu vực, Giá trị khả dụng=Khu vực miền Trung, Mã=KV2
+Row 7: Nhóm=Khu vực, Giá trị khả dụng=Khu vực 3, Mã=KV3
+Row 8: Nhóm=Khu vực, Giá trị khả dụng=Khu vực miền Nam, Mã=KV3
+Row 9: Nhóm=Tỉnh/Thành phố Việt Nam, Giá trị khả dụng=Hà Nội, Mã=HNI
+Row 10: Nhóm=Tỉnh/Thành phố Việt Nam, Giá trị khả dụng=Huế, Mã=HUE
+
+───────────────────────────────────────────────────────────────────────────
+
+SHEET: "kpi_code" - Rows 1-10
+───────────────────────────────────────────────────────────────────────────
+Row 1: kpi_code=call_setup_success_rate, Ý nghĩa=Tỷ lệ thiết lập cuộc gọi thành công
+Row 2: kpi_code=call_drop_rate, Ý nghĩa=Tỷ lệ rớt cuộc gọi
+Row 3: kpi_code=data_traffic_volume, Ý nghĩa=Lưu lượng dữ liệu
+Row 4: kpi_code=network_latency_avg_ms, Ý nghĩa=Độ trễ mạng trung bình (ms)
+Row 5: kpi_code=service_cancellation_rate, Ý nghĩa=Tỷ lệ hủy dịch vụ
+Row 6: kpi_code=voice_call_duration_avg, Ý nghĩa=Thời lượng cuộc gọi thoại trung bình
+Row 7: kpi_code=data_usage_per_user_4g, Ý nghĩa=Mức sử dụng dữ liệu trung bình trên 4G
+Row 8: kpi_code=active_user_count_4g, Ý nghĩa=Số lượng người dùng 4G hoạt động
+Row 9: kpi_code=interruption_incident_count, Ý nghĩa=Số lượng sự cố gián đoạn dịch vụ
+Row 10: kpi_code=subscriber_growth_rate, Ý nghĩa=Tỷ lệ tăng trưởng thuê bao mới
+
+───────────────────────────────────────────────────────────────────────────
+
+SHEET: "unit_code" - Rows 1-9
+───────────────────────────────────────────────────────────────────────────
+Row 1: unit_code=VCS, Đơn vị/Công ty=Công ty An ninh mạng Viettel
+Row 2: unit_code=IDC, Đơn vị/Công ty=Công ty TNHH Viettel - IDC
+Row 3: unit_code=VTM, Đơn vị/Công ty=Công ty Truyền thông Viettel
+Row 4: unit_code=VAI, Đơn vị/Công ty=Trung tâm Trí tuệ nhân tạo và Dịch vụ dữ liệu Việt Nam
+Row 5: unit_code=VTPost, Đơn vị/Công ty=Tổng công ty cổ phần Bưu chính Viettel
+Row 6: unit_code=VDS, Đơn vị/Công ty=Tổng công ty Dịch vụ số Viettel
+Row 7: unit_code=VTS, Đơn vị/Công ty=Tổng công ty Giải pháp doanh nghiệp Viettel
+Row 8: unit_code=VTNet, Đơn vị/Công ty=Tổng công ty Mạng lưới Viettel
+Row 9: unit_code=VTT, Đơn vị/Công ty=Tổng Công ty Viễn thông Viettel
+
+
+4. TOTAL ROW COUNT PER SHEET
+================================================================================
+
+Function:              994 data rows (+ 1 header = 995 total)
+location_code:         52 data rows (+ 1 header = 53 total)
+kpi_code:              12 data rows (+ 1 header = 13 total)
+unit_code:             9 data rows (+ 1 header = 10 total)
+
+TOTAL EXCEL ROWS:      1,071 rows across all sheets
+
+
+5. DATA PATTERNS - TELCO API FUNCTION DEFINITION STRUCTURE
+================================================================================
+
+Field 1: Tên hàm (Function Name)
+──────────────────────────────────
+Format: UPPERCASE with underscores (snake_case)
+Examples:
+  - TRAM_NHA_MANG_KHAC_PROVINCE (Competitor station count by province)
+  - KE_HOACH_TRIEN_KHAI (Deployment plan)
+  - VUNG_PHU_PROVINCE (Coverage area by province)
+  - SUB_ATTACHED_STATION (Attached subscribers at station)
+  - DOWNLOAD_THROUGHPUT_OSS (Download speed)
+Purpose: Unique function identifier
+Typical Patterns: [METRIC/OBJECT]_[SCOPE/GEOGRAPHY]
+
+Field 2: Mô tả (Description)
+──────────────────────────────
+Format: Natural language in Vietnamese
+Content: Business purpose explanation + typical parameters mentioned
+Example: "Tra cứu số trạm hiện có của 2 nhà mạng khác (Vinaphone và Mobifone) 
+          theo mã vị trị và thời gian"
+Purpose: Human-readable explanation of what the function does
+
+Field 3: Tham số (Parameters)
+──────────────────────────────
+Format: Structured text list, one parameter per line
+Pattern: "- param_name [type][requirement]: description [, Default: value]"
+
+Type values observed:
+  - string (most common)
+  - date (implied by YYYY-MM-DD format)
+  - number
+
+Requirement values:
+  - [require] - mandatory parameter
+  - [optional] - optional parameter with default
+
+Special annotations:
+  - Default: specified default value
+  - Constraint list: [value1, value2, value3]
+  - Format specifications (e.g., YYYY-MM-DD)
+
+Example parameters:
+  - location_code [string][require]: Mã vị trị (mã huyện/ tỉnh/ khu vực/ toàn quốc), Default: VNM
+  - from_date [string][require]: Thời gian bắt đầu truy vấn, định dạng YYYY-MM-DD, Default: 2026-06-01
+  - data_level [string][optional]: Mức độ dữ liệu [day, week, month, quarter, year], Default: day
+  - tech_type [string][require]: Loại công nghệ [2G, 3G, 4G, 5G, all], Default: all
+
+Common parameters across functions:
+  - location_code (geographic scope)
+  - from_date / to_date (temporal scope)
+  - data_level (granularity: day/week/month/quarter/year)
+  - type/tech_type (filtering by category)
+
+Field 4: Thông tin (Information/Metadata)
+──────────────────────────────────────────
+Format: JSON object
+Content: Structured metadata about the function
+Structure:
+  {
+    "name": "FUNCTION_NAME",
+    "description": "English or Vietnamese description",
+    "parameters": {
+      "properties": {
+        "param_name": {
+          "type": "string",
+          "enum": ["option1", "option2"],
+          "description": "..."
+        }
+      },
+      "required": ["param_name", ...]
+    },
+    "return_type": "...",
+    "examples": [...]
+  }
+Purpose: Machine-readable specification for code generation and validation
+
+Field 5: Ví dụ câu truy vấn (Query Examples)
+─────────────────────────────────────────────
+Format: Multiple Vietnamese natural language examples
+Prefixed with "- " for each example
+Content: Real-world use cases in Vietnamese
+Purpose: Training data for natural language understanding
+Example:
+  - Số trạm Vinaphone tại Hà Nội là bao nhiêu?
+  - Số trạm phát sóng của các nhà mạng khác tại Hà Nội ngày 21/12/2023?
+  - Thống kê số trạm đối thủ tại Hà Nội từ ngày 1/1/2023 đến 3/3/2023?
+
+Patterns:
+  - Questions about metrics/counts (Bao nhiêu = How many)
+  - Filtered by location and date range
+  - Specific time constraints or comparisons
+  - Multiple phrasings of same query type
+
+Field 6: Ví dụ gọi hàm (Function Call Examples)
+────────────────────────────────────────────────
+Format: JSON object with actual parameter values
+Content: Real parameter values matching function definition
+Purpose: Implementation example showing actual API call structure
+Example:
+  {
+    "from_date": "2026-06-01",
+    "to_date": "2026-06-30",
+    "data_level": "day",
+    "location_code": "HNI"
+  }
+
+Patterns:
+  - Keys match parameter names exactly
+  - Date values in YYYY-MM-DD format
+  - Enum values from allowed list (day/week/month/quarter/year)
+  - Location codes from location_code reference sheet
+  - Minimal example - shows required parameters + common optional ones
+
+
+6. COMPARISON: Excel vs tools.json Structure
+================================================================================
+
+EXCEL FORMAT → TOOLS.JSON FORMAT MAPPING
+─────────────────────────────────────────
+
+Excel "Function" Sheet          →  tools.json Fields
+────────────────────────────────────────────────────
+Tên hàm                         →  "name"
+  [string, uppercase underscore]   [string, lowercase]
+  Examples: TRAM_NHA_MANG        Examples: activate_esim
+
+Mô tả                           →  "description" + "domain"
+  [Vietnamese natural language]    [English brief + category field]
+  Examples: Tra cứu số trạm hiện  Examples: Activate eSIM...
+  có của 2 nhà mạng khác          (+ domain: "sim")
+
+Tham số                         →  "parameters" (JSON Schema)
+  [Text format with types]        [JSON Schema object]
+  - Converts: "param [type]" → {"type": "string", ...}
+  - Converts: "[require]" → in "required" array
+  - Converts: "[optional]" → not in "required" array
+  - Converts: "[enum1,enum2]" → {"enum": [...]}
+
+Thông tin                       →  Various metadata fields
+  [JSON with name/desc/params]    "deprecated", "status", "risk_level",
+                                  "side_effect", "version", "tool_id",
+                                  "split", "tool_group", "side_effects",
+                                  "permission_required", "dependencies"
+
+Ví dụ câu truy vấn             →  "examples[].instruction"
+  [Multiple Vietnamese examples]  [Single English instruction]
+  (Used for training NLU)         (Used for API docs)
+
+Ví dụ gọi hàm                  →  "examples[].arguments"
+  [JSON sample call]              [JSON argument object]
+  (Direct mapping)                (Direct mapping)
+
+
+KEY METADATA IN TOOLS.JSON NOT IN EXCEL
+────────────────────────────────────────
+
+1. deprecated [boolean]
+   Purpose: Mark functions no longer supported
+   Value: true/false
+
+2. status [string]
+   Purpose: Lifecycle stage
+   Values: active, deprecated, evolution, distractor, hard_negative
+
+3. risk_level [string]
+   Purpose: Security/operational risk assessment
+   Values: low, medium, high
+   Example: activate_esim has "high" (modifies subscriber state)
+
+4. side_effect [string]
+   Purpose: Type of operation
+   Values: read (query only), write (modifies state)
+
+5. version [string]
+   Purpose: API version
+   Example: "1.0"
+
+6. tool_id [string]
+   Purpose: Fully qualified identifier
+   Format: "domain.function_name.version"
+   Example: "telco.sim.activate_esim.v1.0"
+
+7. split [string]
+   Purpose: Dataset split for machine learning
+   Values: seen, unseen, evolution, distractor, hard_negative
+   - seen: Functions in training set
+   - unseen: Functions only in test set
+   - evolution: Deprecated versions of functions
+   - distractor: Synthetic functions for robustness testing
+   - hard_negative: Tools that sound similar but do something different
+
+8. tool_group [string]
+   Purpose: Functional grouping (mirrors split)
+   Same values as "split"
+
+9. side_effects [array]
+   Purpose: List of downstream operations triggered
+   Example: ["activate_esim_profile", "send_sms_notification"]
+
+10. permission_required [string]
+    Purpose: Access control requirement
+    Values: null (no auth), "customer_verified", etc.
+
+11. dependencies [array]
+    Purpose: Functions that must be called first
+    Example: replace_sim depends on ["report_lost_sim"]
+
+12. replacement_tool [string]
+    Purpose: For deprecated tools, which tool to use instead
+    Example: "legacy_change_plan" → "change_plan"
+
+13. examples [array of objects]
+    Purpose: Multiple example use cases
+    Structure: [{instruction: "...", arguments: {...}}]
+
+
+EXAMPLE COMPARISON: Excel Row vs tools.json Entry
+──────────────────────────────────────────────────
+
+EXCEL Row 3 (VUNG_PHU_PROVINCE):
+─────────────────────────────────
+Tên hàm: VUNG_PHU_PROVINCE
+Mô tả: Tra cứu hiện trạng vùng phủ sóng của Viettel theo loại công nghệ 2G, 3G, 4G, 5G
+Tham số:
+  - location_code [string][require]: Mã vị trị (mã huyện/ tỉnh/ khu vực/ toàn quốc), Default: VNM
+  - tech_type [string][require]: Loại công nghệ [2G, 3G, 4G, 5G, all]
+Ví dụ gọi hàm:
+  {
+    "location_code": "HNI",
+    "tech_type": "2G"
+  }
+
+───────────────────────────
+
+EQUIVALENT tools.json Entry:
+────────────────────────────
+{
+  "name": "vung_phu_province",
+  "domain": "coverage",
+  "description": "Check Viettel coverage status by technology (2G/3G/4G/5G) and location",
+  "deprecated": false,
+  "status": "active",
+  "risk_level": "low",
+  "side_effect": "read",
+  "parameters": {
+    "type": "object",
+    "required": ["location_code", "tech_type"],
+    "properties": {
+      "location_code": {
+        "type": "string",
+        "enum": ["VNM", "KV1", "KV2", "KV3", "HNI", ...],
+        "description": "Location code (district/province/region/national), Default: VNM"
+      },
+      "tech_type": {
+        "type": "string",
+        "enum": ["2G", "3G", "4G", "5G", "all"],
+        "description": "Technology type to query"
+      }
+    }
+  },
+  "version": "1.0",
+  "tool_id": "telco.coverage.vung_phu_province.v1.0",
+  "split": "seen",
+  "tool_group": "seen",
+  "side_effects": [],
+  "permission_required": null,
+  "dependencies": [],
+  "examples": [{
+    "instruction": "Check the 2G coverage status at Ha Noi",
+    "arguments": {
+      "location_code": "HNI",
+      "tech_type": "2G"
+    }
+  }]
+}
+
+
+SUPPORTING REFERENCE DATA
+──────────────────────────
+
+The three reference sheets provide lookup tables for parameter validation:
+
+1. location_code/object_code (52 entries)
+   Maps human-readable names to codes used in function calls
+   Codes become enum values in parameter definitions
+   Categories: National (VNM), Regions (KV1-KV3), Provinces (HNI, HCM, etc.)
+
+2. kpi_code (12 entries)
+   Defines KPI identifiers used in performance/metrics functions
+   Maps codes like "call_setup_success_rate" to Vietnamese meanings
+   Used in functions that query network quality metrics
+
+3. unit_code (9 entries)
+   Organization codes for Viettel divisions
+   Used for access control and result filtering
+   Codes like VCS, IDC, VTM map to specific departments
+
+
+USE CASE FOR TRAINING
+═════════════════════
+
+Excel Structure (Natural Language Training Data):
+- Vietnamese natural language queries (Ví dụ câu truy vấn)
+- Human-readable specifications (Mô tả)
+- Text-format parameter definitions (Tham số)
+- Function naming patterns (Tên hàm)
+→ Used to train natural language understanding models
+→ Input: user question in Vietnamese
+→ Output: function name and parameters
+
+tools.json Structure (Runtime Implementation):
+- Structured JSON Schema for parameter validation
+- Machine-readable metadata (risk_level, side_effect, permissions)
+- Qualified function identifiers (tool_id)
+- Dataset splits for evaluation (seen/unseen/distractor)
+→ Used at runtime to call functions, validate inputs, check permissions
+→ Used to evaluate model outputs against test sets
+
+Together, they enable:
+1. Training models to understand function intent
+2. Runtime execution and validation
+3. Robustness testing with distractors
+4. Version management and deprecation handling
+5. Multilingual support (Vietnamese spec → English implementation)
+
+================================================================================
+END OF ANALYSIS
+================================================================================

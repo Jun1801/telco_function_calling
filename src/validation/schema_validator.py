@@ -10,6 +10,8 @@ class ValidationIssue:
     code: str
     message: str
     path: str
+    expected: Any = None
+    actual: Any = None
 
 
 class SchemaValidator:
@@ -40,7 +42,7 @@ class SchemaValidator:
 
         for name in required:
             if name not in arguments:
-                issues.append(ValidationIssue("missing_arg", f"Missing required argument: {name}", f"arguments.{name}"))
+                issues.append(ValidationIssue("missing_arg", f"Missing required argument: {name}", f"arguments.{name}", expected="present", actual="missing"))
 
         for name in arguments:
             if name not in properties:
@@ -57,6 +59,8 @@ class SchemaValidator:
                         "invalid_type",
                         f"Invalid type for {name}: expected {expected_type}",
                         f"arguments.{name}",
+                        expected=expected_type,
+                        actual=type(value).__name__,
                     )
                 )
             if "enum" in prop and value not in prop["enum"]:
@@ -65,6 +69,8 @@ class SchemaValidator:
                         "invalid_enum",
                         f"Invalid value for {name}: expected one of {prop['enum']}",
                         f"arguments.{name}",
+                        expected=list(prop["enum"]),
+                        actual=value,
                     )
                 )
             if prop.get("type") == "string" and "pattern" in prop and isinstance(value, str):
@@ -74,6 +80,8 @@ class SchemaValidator:
                             "pattern_mismatch",
                             f"Invalid format for {name}: expected pattern {prop['pattern']}",
                             f"arguments.{name}",
+                            expected=prop["pattern"],
+                            actual=value,
                         )
                     )
 

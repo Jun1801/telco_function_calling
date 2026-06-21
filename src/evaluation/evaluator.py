@@ -25,6 +25,13 @@ def evaluate_prediction(
     reward_soft = 0.0
     reward_strict = 0.0
 
+    # A malformed/unparseable output must never be scored as a correct abstain.
+    if prediction.get("parse_error"):
+        feedback["machine_status"] = "format_error"
+        feedback["errors"].append({"type": "format_error", "message": prediction.get("parse_error", "")})
+        feedback["feedback_text"].append("Output is not valid JSON in the required action format.")
+        return _result(0.0, 0.0, feedback, metrics)
+
     if expected_action == "ask_clarification":
         missing_slots = set(sample.get("missing_slots", []))
         asked_slots = set(prediction.get("asked_slots", []))
@@ -67,16 +74,18 @@ def evaluate_prediction(
         sample.get("customer_verified", True),
     )
 
+    # A deprecated tool produces schema-valid JSON; don't let it corrupt schema_validity.
+    _deprecated = any(i.get("code") == "deprecated_tool" for i in (score.issues or []))
     metrics.update(
         {
             "function_selection_accuracy": 1.0 if predicted_tool == gold_tool else 0.0,
             "argument_key_f1": argument_key_f1(predicted_args, gold_args),
             "argument_value_accuracy": argument_value_accuracy(predicted_args, gold_args),
-            "schema_validity": 1.0 if score.status not in {"schema_invalid"} else 0.0,
+            "schema_validity": 0.0 if (score.status == "schema_invalid" and not _deprecated) else 1.0,
             "contract_validity": 1.0 if score.status not in {"contract_invalid"} else 0.0,
             "execution_success_rate": 1.0 if score.status == "ok" else 0.0,
             "task_success_rate": 1.0 if score.status == sample.get("expected_status", "ok") else 0.0,
-            "deprecated_tool_call_rate": 1.0 if any("deprecated" in item.lower() for item in score.feedback) else 0.0,
+            "deprecated_tool_call_rate": 1.0 if _deprecated else 0.0,
         }
     )
 
@@ -103,7 +112,7 @@ def evaluate_prediction(
     feedback["execution_output"] = score.output
     feedback["feedback_text"].extend(score.feedback)
     if score.status != "ok":
-        feedback["errors"].extend({"type": score.status, "message": item} for item in score.feedback)
+        feedback["errors"].extend(_score_errors(score))
 
     return _result(reward_soft, reward_strict, feedback, metrics)
 
@@ -173,7 +182,7 @@ def _evaluate_multi_call(
     for score in scores:
         feedback["feedback_text"].extend(score.feedback)
         if score.status != "ok":
-            feedback["errors"].extend({"type": score.status, "message": item} for item in score.feedback)
+            feedback["errors"].extend(_score_errors(score))
     if reward_strict == 0.0 and not feedback["errors"]:
         feedback["errors"].append({"type": "multi_call_mismatch"})
         feedback["feedback_text"].append("The task requires the complete set of expected function calls.")
@@ -234,6 +243,13 @@ def _base_metrics(expected_action: str, predicted_action: str) -> dict[str, floa
         "abstention_accuracy": 0.0,
         "deprecated_tool_call_rate": 0.0,
     }
+
+
+def _score_errors(score: Any) -> list[dict[str, Any]]:
+    """Build structured error entries from a ScoreResult (rich detail if available)."""
+    if score.issues:
+        return [{"type": score.status, **issue} for issue in score.issues]
+    return [{"type": score.status, "message": item} for item in score.feedback]
 
 
 def _result(

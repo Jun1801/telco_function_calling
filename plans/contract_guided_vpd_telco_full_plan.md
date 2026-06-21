@@ -176,7 +176,7 @@ Hybrid Tool Retrieval: BM25 + BGE-M3 + Reranker
         ↓
 Context / Slot / Risk Analyzer
         ↓
-Qwen3.5 SLM Function Calling Policy
+Qwen3 SLM Function Calling Policy
         ↓
 Schema Validator + Contract Checker + Mock Executor
         ↓
@@ -225,7 +225,7 @@ Demo + Evaluation Dashboard
 ### Phương án ưu tiên
 
 ```text
-Qwen3.5-4B
+Qwen3 - 4B
 ```
 
 Lý do:
@@ -739,7 +739,7 @@ evaluate(prediction, sample)
 Model:
 
 ```text
-Qwen3.5-4B hoặc 9B
+Qwen3 -4B hoặc 8B
 ```
 
 Đánh giá:

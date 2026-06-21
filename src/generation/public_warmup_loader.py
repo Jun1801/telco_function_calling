@@ -242,8 +242,26 @@ def _assistant_payload_from_value(value: Any) -> dict[str, Any]:
             return _call_payload(parsed)
     if isinstance(parsed, list):
         return _call_payload(parsed)
+    # Hermes-style <tool_call>{JSON}</tool_call> — extract and parse all blocks.
+    if isinstance(value, str) and "<tool_call>" in value:
+        calls = _extract_tool_calls(value)
+        if calls:
+            return _call_payload(calls) if len(calls) > 1 else _call_payload(calls[0])
     # ToolACE bracket notation is kept as raw target text for warm-up.
     return {"action": "raw_text", "content": str(value)}
+
+
+def _extract_tool_calls(text: str) -> list[dict[str, Any]]:
+    import re
+    calls = []
+    for block in re.findall(r"<tool_call>\s*(.*?)\s*</tool_call>", text, re.DOTALL):
+        try:
+            obj = json.loads(block)
+            if isinstance(obj, dict) and any(k in obj for k in ("name", "tool_name", "function")):
+                calls.append(obj)
+        except json.JSONDecodeError:
+            pass
+    return calls
 
 
 def _parse_maybe_json(value: Any) -> Any:

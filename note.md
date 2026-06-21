@@ -6,3 +6,6 @@
 - Tính lại so sánh các baselines
 - taur dataset, ToolRL: Reward is All Tool Learning Need, tìm kiếm thêm các hàm ngoài
 - https://llm-stats.com/benchmarks/tau-bench
+
+- test: 1000-1500 samples
+- 

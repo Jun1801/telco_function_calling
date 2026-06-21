@@ -6,6 +6,7 @@ from typing import Any
 
 
 def parse_model_output(text: str) -> dict[str, Any]:
+    text = _strip_thinking(text)
     candidate = _extract_json_candidate(text)
     if candidate is None:
         return _parse_error("No JSON object found in model output.", text)
@@ -19,6 +20,10 @@ def parse_model_output(text: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return _parse_error("Top-level output must be a JSON object.", text)
     return _normalize_payload(payload, text)
+
+
+def _strip_thinking(text: str) -> str:
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
 
 
 def _extract_json_candidate(text: str) -> str | None:
@@ -40,6 +45,8 @@ def _normalize_payload(payload: dict[str, Any], raw_text: str) -> dict[str, Any]
             return {"action": "call_function", "call": {"tool_name": call["tool_name"], "arguments": call.get("arguments", {})}}
     if action == "call_functions" and isinstance(payload.get("calls"), list):
         calls = [_normalize_call(call) for call in payload["calls"] if isinstance(call, dict)]
+        if len(calls) == 1:
+            return {"action": "call_function", "call": calls[0]}
         if calls:
             return {"action": "call_functions", "calls": calls}
     if action == "ask_clarification":

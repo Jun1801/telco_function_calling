@@ -13,8 +13,16 @@ def build_prompt_messages(
     tool_registry: ToolRegistry,
     contract_registry: ContractRegistry,
     max_tools: int = 8,
+    extra_tools: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, str]]:
     tools = _select_prompt_tools(sample, tool_registry, max_tools)
+    if extra_tools:
+        # Inject tools not resolvable from the registry (e.g. a masked func_X
+        # schema embedded in the sample). Prepended; deduped by name. Project to
+        # schema fields only so masking bookkeeping (original_name/parameter_map)
+        # never leaks the real tool name into the prompt.
+        existing = {tool["name"] for tool in tools}
+        tools = [_project_extra_tool(t) for t in extra_tools if t["name"] not in existing] + tools
     contracts = [_compact_contract(contract_registry.get(tool["name"])) for tool in tools]
     context = {
         "base_model_family": "qwen",
@@ -38,31 +46,40 @@ def build_prompt_messages(
 
 def _select_prompt_tools(sample: dict[str, Any], tool_registry: ToolRegistry, max_tools: int) -> list[dict[str, Any]]:
     names: list[str] = []
+    # When a tool is masked (func_X injected via extra_tools), the real tool it
+    # shadows must NOT also appear — otherwise the model reads the real name and
+    # the schema-only masking test is meaningless (RQ3).
+    masked = sample.get("masked_tool")
+    shadowed = {masked["original_name"]} if masked and masked.get("original_name") else set()
+
+    def _add(name: str) -> None:
+        if name not in names and name not in shadowed:
+            names.append(name)
+
     for call_key in ("gold_call", "call"):
         call = sample.get(call_key)
-        if call and call["tool_name"] not in names:
-            names.append(call["tool_name"])
+        if call:
+            _add(call["tool_name"])
     checker_call = sample.get("checker_call")
-    if checker_call and checker_call["tool_name"] not in names:
-        names.append(checker_call["tool_name"])
+    if checker_call:
+        _add(checker_call["tool_name"])
     for call in sample.get("gold_calls") or []:
-        if call["tool_name"] not in names:
-            names.append(call["tool_name"])
+        _add(call["tool_name"])
     for call in sample.get("gold_steps") or []:
-        if call["tool_name"] not in names:
-            names.append(call["tool_name"])
+        _add(call["tool_name"])
 
-    for fallback in _keyword_fallback_tools(sample["instruction"]):
-        if len(names) >= max_tools:
-            break
-        if fallback not in names:
-            names.append(fallback)
-
-    for fallback in ["get_balance", "get_current_plan", "add_data_package", "open_support_ticket"]:
-        if len(names) >= max_tools:
-            break
-        if fallback not in names:
-            names.append(fallback)
+    # Distractor fallbacks are synthetic-registry-only: they pollute real-tool
+    # prompts with synthetic names and would re-leak a masked real name.
+    if not masked and sample.get("source") != "real_tool_xlsx":
+        for fallback in _keyword_fallback_tools(sample["instruction"]):
+            if len(names) >= max_tools:
+                break
+            _add(fallback)
+        for fallback in ["get_balance", "get_current_plan", "add_data_package", "open_support_ticket"]:
+            if len(names) >= max_tools:
+                break
+            if fallback not in names:
+                names.append(fallback)
 
     tools = []
     for name in names[:max_tools]:
@@ -82,6 +99,14 @@ def _select_prompt_tools(sample: dict[str, Any], tool_registry: ToolRegistry, ma
                 }
             )
     return tools
+
+
+_EXTRA_TOOL_FIELDS = ("name", "description", "parameters", "status", "deprecated",
+                      "replacement_tool", "risk_level", "permission_required", "side_effects")
+
+
+def _project_extra_tool(tool: dict[str, Any]) -> dict[str, Any]:
+    return {k: tool[k] for k in _EXTRA_TOOL_FIELDS if k in tool}
 
 
 def _keyword_fallback_tools(instruction: str) -> list[str]:

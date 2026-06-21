@@ -1,0 +1,44 @@
+# Phase 5 — Standard SDPO (offline, single-device MLX adaptation)
+#
+# Algorithm (from lasgroup/SDPO):
+#   Teacher: prompt + environment_feedback + best_sibling_demo → teacher logits (no_grad)
+#   Student: prompt only → student logits (trainable)
+#   Loss: JSD(student || teacher) on response tokens, top-k filtered, IS-clipped
+#
+# Single-device adaptation: pre-compute teacher logits offline (Phase A),
+# then train student against stored logits (Phase B).
+
+# Rollout settings
+rollouts_per_prompt: 4
+temperature: 0.8
+max_generation_tokens: 256
+success_reward_threshold: 1.0     # minimum reward for a rollout to serve as sibling demo
+
+# Distillation settings (mirrors SDPO paper)
+distillation_top_k: 20
+alpha: 0.5                         # 0.0=forward-KL, 1.0=reverse-KL, 0.5=JSD
+is_clip: 2.0                       # importance sampling ratio clip
+teacher_stop_gradient: true
+
+# Teacher EMA (not applied in offline mode — teacher is fixed M3 checkpoint)
+teacher_update_rate: 0.05
+
+# Models
+model: Qwen/Qwen3-4B
+teacher_adapter: outputs/sft_mlx/qwen3-4b-feedback-sdft   # M3 — provides teacher logits
+student_resume: outputs/sft_mlx/qwen3-4b-feedback-sdft    # M3 — student starting point
+student_output: outputs/sft_mlx/qwen3-4b-sdpo
+
+# Training
+learning_rate: 5e-6
+lora_layers: 8
+batch_size: 1
+epochs: 3
+seed: 42
+
+# Data paths
+rollout_splits:
+  - train
+rollout_output: data/sdpo_rollouts.jsonl
+sdpo_dataset_output: data/sdpo_dataset.jsonl
+mlx_data_dir: data/mlx_sdpo

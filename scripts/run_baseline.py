@@ -9,23 +9,28 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.evaluation.evaluator import evaluate_prediction
-from src.executor.mock_telco_api import MockTelcoApi
+from src.evaluation.routing import (
+    build_sample_prompt,
+    evaluate_sample,
+    is_real_sample,
+    load_real_assets,
+)
 from src.model.output_parser import parse_model_output
-from src.model.prompt_builder import build_prompt_messages
 from src.registry.contract_registry import ContractRegistry
 from src.registry.tool_registry import ToolRegistry
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run prompt-only baseline.")
-    parser.add_argument("--backend", default="mock_oracle", choices=["mock_oracle", "mock_malformed", "transformers"])
+    parser.add_argument("--backend", default="mock_oracle", choices=["mock_oracle", "mock_malformed", "transformers", "mlx"])
     parser.add_argument("--model", default="Qwen/Qwen2.5-Coder-7B-Instruct")
     parser.add_argument("--adapter", help="Optional PEFT/LoRA adapter path to evaluate with the transformers backend.")
     parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--load-in-4bit", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--limit", type=int, help="Optional max number of eval samples.")
+    parser.add_argument("--splits", choices=["all", "synthetic", "real"], default="all",
+                        help="Filter eval samples: all, synthetic-only, or real-only.")
     parser.add_argument("--enable-thinking", action="store_true", help="Pass enable_thinking=True when the tokenizer supports it.")
     parser.add_argument("--output", default=str(ROOT / "reports" / "prompt_only_results.jsonl"))
     parser.add_argument("--error-report", default=str(ROOT / "reports" / "error_analysis.md"))
@@ -36,25 +41,29 @@ def main() -> None:
     report_path.parent.mkdir(parents=True, exist_ok=True)
     tool_registry = ToolRegistry.from_file(data_dir / "tools.json")
     contract_registry = ContractRegistry.from_file(data_dir / "tool_contracts.json")
+    real_assets = load_real_assets(data_dir)
     generator = _build_generator(args)
 
+    samples = _iter_eval_samples(data_dir)
+    if args.splits == "real":
+        samples = [s for s in samples if is_real_sample(s)]
+    elif args.splits == "synthetic":
+        samples = [s for s in samples if not is_real_sample(s)]
+
     records = []
-    for sample in _iter_eval_samples(data_dir)[: args.limit]:
-        prompt = build_prompt_messages(sample, tool_registry, contract_registry)
+    for sample in samples[: args.limit]:
+        prompt = build_sample_prompt(sample, tool_registry, contract_registry, real_assets)
         raw_output = generator.generate(sample, prompt)
         prediction = parse_model_output(raw_output)
-        result = evaluate_prediction(
-            sample,
-            prediction,
-            tool_registry,
-            MockTelcoApi.from_file(data_dir / "mock_telco_db.json"),
-            contract_registry,
+        result = evaluate_sample(
+            sample, prediction, tool_registry, contract_registry, data_dir, real_assets
         )
         records.append(
             {
                 "id": sample["id"],
                 "split": sample["split"],
                 "scenario": sample["scenario"],
+                "is_real": is_real_sample(sample),
                 "backend": args.backend,
                 "prompt": prompt,
                 "raw_output": raw_output,
@@ -77,6 +86,14 @@ def main() -> None:
 def _build_generator(args: argparse.Namespace) -> Any:
     if args.backend in {"mock_oracle", "mock_malformed"}:
         return MockGenerator(args.backend)
+    if args.backend == "mlx":
+        return MLXGenerator(
+            model_name=args.model,
+            adapter_path=args.adapter,
+            max_tokens=args.max_new_tokens,
+            temperature=args.temperature,
+            enable_thinking=args.enable_thinking,
+        )
     return TransformersGenerator(
         model_name=args.model,
         adapter_path=args.adapter,
@@ -93,6 +110,53 @@ class MockGenerator:
 
     def generate(self, sample: dict[str, Any], prompt: list[dict[str, str]]) -> str:
         return _mock_model_output(sample, self.backend)
+
+
+class MLXGenerator:
+    def __init__(
+        self,
+        model_name: str,
+        adapter_path: str | None,
+        max_tokens: int,
+        temperature: float,
+        enable_thinking: bool = False,
+    ) -> None:
+        try:
+            from mlx_lm import load, generate as mlx_generate
+        except ImportError as error:
+            raise SystemExit(
+                "The mlx backend requires mlx-lm. Install with:\n"
+                "  pip install mlx-lm\n"
+                "Requires macOS with Apple Silicon (M-series)."
+            ) from error
+
+        self._generate = mlx_generate
+        self.model, self.tokenizer = load(model_name, adapter_path=adapter_path)
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.enable_thinking = enable_thinking
+
+    def generate(self, sample: dict[str, Any], prompt: list[dict[str, str]]) -> str:
+        # Qwen3 defaults to thinking mode; with a 256-token budget the <think>
+        # block is truncated before any JSON is emitted (→ parse_error). The
+        # project's target format is direct-JSON, so disable thinking by default.
+        try:
+            text = self.tokenizer.apply_chat_template(
+                prompt, tokenize=False, add_generation_prompt=True,
+                enable_thinking=self.enable_thinking,
+            )
+        except TypeError:
+            text = self.tokenizer.apply_chat_template(
+                prompt, tokenize=False, add_generation_prompt=True
+            )
+        kwargs: dict[str, Any] = {"max_tokens": self.max_tokens, "verbose": False}
+        if self.temperature > 0:
+            try:
+                from mlx_lm.sample_utils import make_sampler
+                kwargs["sampler"] = make_sampler(temp=self.temperature)
+            except ImportError:
+                pass
+        return self._generate(self.model, self.tokenizer, prompt=text, **kwargs)
 
 
 class TransformersGenerator:
@@ -200,23 +264,43 @@ def _write_error_report(path: Path, records: list[dict[str, Any]]) -> None:
     total = len(records)
     strict_success = sum(1 for item in records if item["reward"] == 1.0)
     parse_errors = sum(1 for item in records if item["prediction"].get("parse_error"))
-    by_split: dict[str, list[float]] = {}
-    for item in records:
-        by_split.setdefault(item["split"], []).append(item["reward"])
     lines = [
         "# Prompt-Only Baseline Error Analysis",
         "",
         f"- total_records: {total}",
         f"- strict_success: {strict_success}/{total}",
         f"- parse_errors: {parse_errors}",
-        "",
-        "## Reward By Split",
-        "",
     ]
-    for split, rewards in sorted(by_split.items()):
-        avg_reward = sum(rewards) / len(rewards)
-        lines.append(f"- {split}: {avg_reward:.3f} over {len(rewards)} records")
+    # Real KPI tools are read-only — report schema/argument metrics, not execution/task.
+    real_metrics = {
+        "function_selection_accuracy": "func",
+        "argument_key_f1": "key_f1",
+        "argument_value_accuracy": "val_acc",
+        "schema_validity": "schema",
+    }
+    for is_real, title in [(False, "Synthetic"), (True, "Real (read-only KPI)")]:
+        subset = [r for r in records if r.get("is_real", False) is is_real]
+        if not subset:
+            continue
+        by_split: dict[str, list[dict[str, Any]]] = {}
+        for item in subset:
+            by_split.setdefault(item["split"], []).append(item)
+        lines += ["", f"## {title} — Reward By Split", ""]
+        for split, items in sorted(by_split.items()):
+            avg_reward = sum(i["reward"] for i in items) / len(items)
+            line = f"- {split}: reward={avg_reward:.3f} over {len(items)}"
+            if is_real:
+                extra = " | ".join(
+                    f"{label}={_avg_metric(items, m):.2f}" for m, label in real_metrics.items()
+                )
+                line += f"  ({extra})"
+            lines.append(line)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _avg_metric(items: list[dict[str, Any]], key: str) -> float:
+    vals = [i["metrics"].get(key, 0.0) for i in items if key in i.get("metrics", {})]
+    return sum(vals) / len(vals) if vals else 0.0
 
 
 if __name__ == "__main__":
