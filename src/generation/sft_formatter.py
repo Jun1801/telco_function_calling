@@ -24,6 +24,18 @@ Use call_functions for multi-step or parallel requests. Ask for clarification wh
 If a tool contract or business precondition is violated, abstain instead of asking for slots or calling helper tools.
 Never call a tool if required arguments are missing, the tool is deprecated, or the contract is unsafe."""
 
+# Real KPI tools are read-only with no business contracts — use a clean prompt
+# without contract language so the model is not confused during training.
+SYSTEM_PROMPT_REAL = """You are a Telco function-calling agent.
+Read the user request and available tool schemas.
+Return only a JSON object with one of these actions:
+{"action":"call_function","call":{"tool_name":"...","arguments":{...}}}
+{"action":"call_functions","calls":[{"tool_name":"...","arguments":{...}}]}
+{"action":"ask_clarification","asked_slots":["..."]}
+{"action":"abstain","reason":"..."}
+Use call_functions for multi-step or parallel requests. Ask for clarification when a required argument is missing.
+Never call a tool if required arguments are missing or the tool is deprecated."""
+
 
 def format_sample_for_sft(sample: dict[str, Any], tool_registry: ToolRegistry) -> dict[str, Any]:
     tools = _select_tools(sample, tool_registry)

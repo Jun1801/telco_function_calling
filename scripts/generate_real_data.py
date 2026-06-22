@@ -28,12 +28,16 @@ PARALLEL_PAIRS = [
     ("kqi_province", "download_throughput_oss"),
     ("vung_lom_all", "pakh_all"),
     ("tram_nha_mang_khac_province", "vung_phu_province"),
+    ("kqi_province", "sub_attached_all"),           # KQI + thuê bao, share location+time
+    ("download_throughput_oss", "speedtest_province"),  # 2 nguồn throughput cùng tỉnh
+    ("thong_ke_kpi", "nguong_kpi"),                 # thống kê + ngưỡng, share kpi_code
 ]
 MULTI_STEP_CHAINS = [
     ("regional_station_info", "sub_attached_station", "station_code"),
     ("regional_station_info", "radio_traffic", "object_code"),
     ("regional_station_info", "alarm_count", "object_code"),
     ("regional_station_info", "top_port", "object_code"),
+    ("regional_station_info", "alarm_unresolved", "object_code"),  # trạm → alarm chưa xử lý
 ]
 
 # Per-unit generation counts at scale=1.0 (before verify/split). Over-generated to
@@ -58,14 +62,18 @@ def _hold(rows, k, rng):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--scale", type=float, default=1.0)
+    ap.add_argument("--scale", type=float, default=1.0,
+                    help="Multiplier for raw generation counts (train families + mask_train)")
+    ap.add_argument("--eval-scale", type=float, default=1.0,
+                    help="Multiplier for eval hold-out targets (default 1.0 = fixed at DEFAULTS)")
     ap.add_argument("--no-semantic", action="store_true")
     ap.add_argument("--limit-tools", type=int, default=0)
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
-    C = {k: (int(v * args.scale) if k not in ("eval_seen", "eval_unseen", "eval_missing", "eval_multi",
-             "eval_parallel", "eval_abstain", "mask_train", "mask_eval_seen", "mask_eval_unseen")
-             else int(v * args.scale)) for k, v in DEFAULTS.items()}
+    _EVAL_KEYS = {"eval_seen", "eval_unseen", "eval_missing", "eval_multi",
+                  "eval_parallel", "eval_abstain", "mask_eval_seen", "mask_eval_unseen"}
+    C = {k: int(v * (args.eval_scale if k in _EVAL_KEYS else args.scale))
+         for k, v in DEFAULTS.items()}
     rng = random.Random(args.seed)
 
     data = ROOT / "data"
@@ -85,7 +93,7 @@ def main() -> None:
     except ImportError:
         pass
 
-    print("Loading generator (Qwen3-4B) ...")
+    print(f"Loading generator (scale={args.scale}, eval-scale={args.eval_scale}) ...")
     gen = RealToolLLMGenerator(references=refs, stations=stations)
     ver = DualLayerRealVerifier(tbn, references=refs, stations=stations,
                                 generator=gen, run_semantic=not args.no_semantic)

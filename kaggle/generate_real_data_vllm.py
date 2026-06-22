@@ -8,6 +8,15 @@ natural Vietnamese query per spec — ALL prompts are generated in ONE vLLM batc
 Inputs (Kaggle Dataset dir): real_tools.json, real_reference_codes.json,
 real_station_catalogue.json.
 Outputs (/kaggle/working): sft_train_real.jsonl + eval_real_*.jsonl + report.
+
+Env vars:
+  GEN_MODEL   HuggingFace model ID (default: Qwen/Qwen3-32B-Instruct)
+  SCALE       raw generation multiplier for train families (default: 1.0)
+  EVAL_SCALE  multiplier for eval hold-out targets (default: 1.0)
+  BACKEND     vllm | transformers (default: transformers)
+  BATCH       batch size for transformers backend (default: 4)
+  DATA_DIR    path to input data (default: /kaggle/input/telco-real-tools)
+  OUT_DIR     output path (default: /kaggle/working)
 """
 
 from __future__ import annotations
@@ -22,22 +31,36 @@ from pathlib import Path
 
 DATA = Path(os.environ.get("DATA_DIR", "/kaggle/input/telco-real-tools"))
 OUT = Path(os.environ.get("OUT_DIR", "/kaggle/working"))
-MODEL = os.environ.get("GEN_MODEL", "Qwen/Qwen3-4B")
+MODEL = os.environ.get("GEN_MODEL", "Qwen/Qwen3-32B-Instruct")
 SCALE = float(os.environ.get("SCALE", "1.0"))
+EVAL_SCALE = float(os.environ.get("EVAL_SCALE", "1.0"))
 
 STEP1_REF = "<from_step_1>"
 TIER_MIX = ["simple", "simple", "simple", "medium", "medium", "medium", "medium", "complex", "complex", "complex"]
 
-# Volume targets (final, after rule verify). Over-generated ~1.25x.
+# Volume targets at scale=1.0 (before rule verify). Over-generated ~1.25x.
 TARGET = dict(seen_single=90, unseen_single=26, missing=90, parallel_per_pair=110, multi_per_chain=300, abstain=980,
               eval_seen=250, eval_unseen=150, eval_missing=240, eval_multi=155, eval_parallel=80, eval_abstain=155,
               mask_train=350, mask_eval_seen=110, mask_eval_unseen=60)
-PARALLEL_PAIRS = [("kqi_province", "download_throughput_oss"), ("vung_lom_all", "pakh_all"),
-                  ("tram_nha_mang_khac_province", "vung_phu_province")]
-MULTI_CHAINS = [("regional_station_info", "sub_attached_station", "station_code"),
-                ("regional_station_info", "radio_traffic", "object_code"),
-                ("regional_station_info", "alarm_count", "object_code"),
-                ("regional_station_info", "top_port", "object_code")]
+
+# Parallel pairs: both tools share location+time context (or kpi_code for thong_ke/nguong).
+PARALLEL_PAIRS = [
+    ("kqi_province",              "download_throughput_oss"),
+    ("vung_lom_all",              "pakh_all"),
+    ("tram_nha_mang_khac_province", "vung_phu_province"),
+    ("kqi_province",              "sub_attached_all"),          # KQI + thuê bao, share location+time
+    ("download_throughput_oss",   "speedtest_province"),        # 2 nguồn throughput cùng tỉnh
+    ("thong_ke_kpi",              "nguong_kpi"),                # thống kê + ngưỡng, share kpi_code
+]
+
+# Multi-step chains: all start with regional_station_info → dependent tool uses result key.
+MULTI_CHAINS = [
+    ("regional_station_info", "sub_attached_station", "station_code"),
+    ("regional_station_info", "radio_traffic",        "object_code"),
+    ("regional_station_info", "alarm_count",          "object_code"),
+    ("regional_station_info", "top_port",             "object_code"),
+    ("regional_station_info", "alarm_unresolved",     "object_code"),  # trạm → alarm chưa xử lý
+]
 
 # ============================== ArgSampler ==============================
 _DATA_LEVEL_VN = {"day": "ngày", "week": "tuần", "month": "tháng", "quarter": "quý", "year": "năm"}
@@ -232,7 +255,7 @@ SYS_ABSTAIN = ("Sinh MỘT câu hỏi tiếng Việt NGOÀI phạm vi hệ thố
 
 
 def main():
-    print(f"DATA={DATA} OUT={OUT} MODEL={MODEL} SCALE={SCALE}", flush=True)
+    print(f"DATA={DATA} OUT={OUT} MODEL={MODEL} SCALE={SCALE} EVAL_SCALE={EVAL_SCALE}", flush=True)
     tools = json.loads((DATA / "real_tools.json").read_text())
     refs = json.loads((DATA / "real_reference_codes.json").read_text())
     stations = json.loads((DATA / "real_station_catalogue.json").read_text())
@@ -240,7 +263,11 @@ def main():
     seen = [t for t in tools if t["split"] == "seen"]
     unseen = [t for t in tools if t["split"] == "unseen"]
     sampler = ArgSampler(refs, stations)
-    C = {k: max(1, int(v * SCALE)) for k, v in TARGET.items()}
+
+    _EVAL_KEYS = {"eval_seen", "eval_unseen", "eval_missing", "eval_multi",
+                  "eval_parallel", "eval_abstain", "mask_eval_seen", "mask_eval_unseen"}
+    C = {k: max(1, int(v * (EVAL_SCALE if k in _EVAL_KEYS else SCALE))) for k, v in TARGET.items()}
+
     rng = random.Random(0)
     valid_loc = {i["code"] for i in refs["location_code"]}
     valid_sta = {s["station_code"] for s in stations}
@@ -259,7 +286,7 @@ def main():
             def b(q, tool=tool, args=args, i=i, split=split):
                 return {"id": f"real_{tool['name']}_single_{i:04d}", "source": "real_tool_xlsx",
                         "scenario": "valid_kpi_read", "scenario_family": "single_step_valid",
-                        "instruction": q, "customer_verified": True, "expected_action": "call_function",
+                        "instruction": q, "expected_action": "call_function",
                         "generator": "vllm", "gold_call": {"tool_name": tool["name"], "arguments": args}}
             jobs.append({"user": f"Viết câu hỏi cho: {spec}", "system": SYS_PARA, "builder": b,
                          "family": "single_step_valid", "_split": split})
@@ -294,7 +321,7 @@ def main():
             def b(q, t=t, dropped=dropped, checker=checker, i=i):
                 return {"id": f"real_{t['name']}_missing_{i:04d}", "source": "real_tool_xlsx",
                         "scenario": "missing_parameter", "scenario_family": "missing_slot",
-                        "instruction": q, "customer_verified": True, "expected_action": "ask_clarification",
+                        "instruction": q, "expected_action": "ask_clarification",
                         "generator": "vllm", "missing_slots": dropped,
                         "prediction": {"action": "ask_clarification", "asked_slots": dropped},
                         "checker_call": {"tool_name": t["name"], "arguments": checker},
@@ -308,19 +335,19 @@ def main():
         for i in range(C["parallel_per_pair"]):
             tier = TIER_MIX[i % len(TIER_MIX)]
             sa = sampler.sample(a, tier, i + 1000)
-            shared = {k: sa["arguments"][k] for k in ("location_code", "from_date", "to_date", "data_level") if k in sa["arguments"]}
+            shared = {k: sa["arguments"][k] for k in ("location_code", "from_date", "to_date", "data_level", "kpi_code") if k in sa["arguments"]}
             sb = sampler.sample(bb, tier, i + 2000)
             for k, v in shared.items():
                 if k in sb["arguments"]:
                     sb["arguments"][k] = v
-            h = {k: v for k, v in sa["hints"].items() if k.startswith("_") or k in ("location_code", "object_code")}
+            h = {k: v for k, v in sa["hints"].items() if k.startswith("_") or k in ("location_code", "object_code", "kpi_code")}
             spec = (f"Hỏi cả: (1){a['description'].split('.')[0][:55]}; (2){bb['description'].split('.')[0][:55]}. "
                     + hints_spec(a, h).split("Phải nêu:")[-1])
 
             def b(q, a=a, bb=bb, sa=sa, sb=sb, pi=pi, i=i):
                 return {"id": f"real_parallel_{pi}_{i:04d}", "source": "real_tool_xlsx",
                         "scenario": "parallel_reads", "scenario_family": "parallel", "instruction": q,
-                        "customer_verified": True, "expected_action": "call_functions", "generator": "vllm",
+                        "expected_action": "call_functions", "generator": "vllm",
                         "gold_calls": [{"tool_name": a["name"], "arguments": sa["arguments"]},
                                        {"tool_name": bb["name"], "arguments": sb["arguments"]}]}
             jobs.append({"user": f"Viết câu hỏi cho: {spec}", "system": SYS_PARA, "builder": b,
@@ -340,7 +367,7 @@ def main():
 
             def b(q, src=src, dep=dep, s1=s1, s2=s2, ci=ci, i=i):
                 return {"id": f"real_multi_{ci}_{i:04d}", "source": "real_tool_xlsx", "scenario": "dependency",
-                        "scenario_family": "multi_step", "instruction": q, "customer_verified": True,
+                        "scenario_family": "multi_step", "instruction": q,
                         "expected_action": "call_functions", "generator": "vllm",
                         "gold_steps": [{"tool_name": src["name"], "arguments": s1["arguments"]},
                                        {"tool_name": dep["name"], "arguments": s2, "depends_on_previous": True}]}
@@ -350,7 +377,7 @@ def main():
     for i in range(C["abstain"]):
         def b(q, i=i):
             return {"id": f"real_abstain_{i:04d}", "source": "real_tool_xlsx", "scenario": "irrelevance",
-                    "scenario_family": "abstain", "instruction": q, "customer_verified": True,
+                    "scenario_family": "abstain", "instruction": q,
                     "expected_action": "abstain", "generator": "vllm",
                     "prediction": {"action": "abstain", "reason": "ngoài phạm vi công cụ KPI"}}
         jobs.append({"user": f"Sinh 1 câu hỏi ngoài phạm vi (mẫu {i}).", "system": SYS_ABSTAIN, "builder": b,
@@ -358,7 +385,7 @@ def main():
 
     print(f"Total jobs (prompts): {len(jobs)}", flush=True)
 
-    # ---- LLM batch generate (backend: transformers default; vllm optional) ----
+    # ---- LLM batch generate ----
     from transformers import AutoTokenizer
     tok = AutoTokenizer.from_pretrained(MODEL, trust_remote_code=True)
 
@@ -372,11 +399,11 @@ def main():
 
     prompts = [templ(j["system"], j["user"]) for j in jobs]
     backend = os.environ.get("BACKEND", "transformers").lower()
-    print(f"Backend: {backend} | generating {len(prompts)} queries ...", flush=True)
+    print(f"Backend: {backend} | model: {MODEL} | generating {len(prompts)} queries ...", flush=True)
 
     if backend == "vllm":
         from vllm import LLM, SamplingParams
-        llm = LLM(model=MODEL, dtype="half", max_model_len=4096, gpu_memory_utilization=0.92, trust_remote_code=True)
+        llm = LLM(model=MODEL, dtype="half", max_model_len=8192, gpu_memory_utilization=0.90, trust_remote_code=True)
         outs = llm.generate(prompts, SamplingParams(temperature=0.85, max_tokens=90, stop=["\n\n"]))
         texts = [o.outputs[0].text for o in outs]
     else:  # transformers — robust on Kaggle (no runtime compilation)
@@ -388,7 +415,7 @@ def main():
         model = AutoModelForCausalLM.from_pretrained(MODEL, torch_dtype=torch.float16,
                                                      device_map="cuda", trust_remote_code=True)
         model.eval()
-        B = int(os.environ.get("BATCH", "48"))
+        B = int(os.environ.get("BATCH", "4"))  # 32B model: small batch to avoid OOM
         texts = []
         for i in range(0, len(prompts), B):
             chunk = prompts[i:i + B]
@@ -414,7 +441,7 @@ def main():
             if ex.get("query") and ex.get("call"):
                 samples.append({"id": f"real_{t['name']}_seed_{i:03d}", "source": "real_tool_xlsx",
                                 "scenario": "valid_unseen_tool", "scenario_family": "single_step_valid",
-                                "instruction": ex["query"].strip(), "customer_verified": True,
+                                "instruction": ex["query"].strip(),
                                 "expected_action": "call_function", "generator": "seed",
                                 "gold_call": {"tool_name": t["name"], "arguments": copy.deepcopy(ex["call"])}})
 
@@ -453,7 +480,7 @@ def main():
                 v = a.get(dk)
                 if v is not None and STEP1_REF not in str(v) and not _DATE_RE.match(str(v)):
                     return False
-        # city↔code
+        # city↔code word-boundary check
         q = s["instruction"].lower()
         matched = {code for pat, code in name2pat if pat.search(q)}
         gl = {c["arguments"].get("location_code") for c in calls if c["arguments"].get("location_code")}
@@ -463,7 +490,7 @@ def main():
 
     kept = [s for s in samples if rule_ok(s)]
 
-    # dedupe: Jaccard 0.85 within (family, primary tool) — parity with local verifier
+    # dedupe: Jaccard 0.85 within (family, primary tool) — parity with src/generation/real_tool_verifier.py
     def _toks(t):
         return set(re.findall(r"\w+", t.lower()))
 
@@ -478,7 +505,7 @@ def main():
                           sort_keys=True, default=str)
 
     groups = {}; arg_count = Counter(); ded = []
-    MAX_PER_ARGS = 3  # allow up to N phrasings per identical gold-arg combo (low-param tools)
+    MAX_PER_ARGS = 3  # cap phrasings per identical gold-arg combo — keep diversity (Option A)
     for s in kept:
         pt = (all_calls(s)[0]["tool_name"] if all_calls(s) else s.get("checker_call", {}).get("tool_name", ""))
         key = (s["scenario_family"], pt)
@@ -530,7 +557,7 @@ def main():
                 mt = {"name": mn, "description": desc, "parameters": copy.deepcopy(tool["parameters"]), "status": "active", "deprecated": False}
             out.append({"id": f"real_mask_{tag}_{mode}_{i:04d}", "source": "real_tool_xlsx", "scenario": f"masking_{mode}",
                         "scenario_family": "masking", "instruction": f"Dùng {mn} để: {base['instruction']}",
-                        "customer_verified": True, "expected_action": "call_function", "generator": "vllm",
+                        "expected_action": "call_function", "generator": "vllm",
                         "gold_call": {"tool_name": mn, "arguments": gargs}, "masked_tool": mt})
         return out
 
@@ -560,7 +587,8 @@ def main():
 
     report = {"train_total": len(train), "train_by_family": dict(Counter(s["scenario_family"] for s in train)),
               "eval_total": sum(len(r) for r in evalsets.values()),
-              "eval_counts": {k: len(v) for k, v in evalsets.items()}}
+              "eval_counts": {k: len(v) for k, v in evalsets.items()},
+              "model": MODEL, "scale": SCALE, "eval_scale": EVAL_SCALE}
     (OUT / "real_data_generation.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
     print("=== SUMMARY ===", flush=True)
     print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)

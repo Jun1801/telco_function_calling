@@ -146,7 +146,7 @@ class RealToolLLMGenerator:
         s = {
             "id": f"real_{split}_{tool['name']}_{family}_{idx:04d}",
             "source": "real_tool_xlsx", "split": split, "scenario": scenario,
-            "scenario_family": family, "instruction": query, "customer_verified": True,
+            "scenario_family": family, "instruction": query,
             "expected_action": "call_function", "generator": "real_tool_llm",
             "gold_call": {"tool_name": tool["name"], "arguments": args},
         }
@@ -200,7 +200,7 @@ class RealToolLLMGenerator:
                 return {
                     "id": f"real_{tool['split']}_{tool['name']}_missing_{i:04d}",
                     "source": "real_tool_xlsx", "split": tool["split"], "scenario": "missing_parameter",
-                    "scenario_family": "missing_slot", "instruction": q, "customer_verified": True,
+                    "scenario_family": "missing_slot", "instruction": q,
                     "expected_action": "ask_clarification", "generator": "real_tool_llm",
                     "missing_slots": drop, "prediction": {"action": "ask_clarification", "asked_slots": drop},
                     "checker_call": {"tool_name": tool["name"], "arguments": checker},
@@ -244,7 +244,7 @@ class RealToolLLMGenerator:
             out.append({
                 "id": f"real_mask_{mode}_{i:04d}", "source": "real_tool_xlsx", "split": base["split"],
                 "scenario": f"masking_{mode}", "scenario_family": "masking", "instruction": instr,
-                "customer_verified": True, "expected_action": "call_function", "generator": "real_tool_llm",
+                "expected_action": "call_function", "generator": "real_tool_llm",
                 "gold_call": {"tool_name": masked_name, "arguments": gold_args}, "masked_tool": masked_tool,
             })
         return out
@@ -270,7 +270,7 @@ class RealToolLLMGenerator:
                     return {
                         "id": f"real_parallel_{pi}_{i:04d}", "source": "real_tool_xlsx", "split": "seen",
                         "scenario": "parallel_reads", "scenario_family": "parallel", "instruction": q,
-                        "customer_verified": True, "expected_action": "call_functions", "generator": "real_tool_llm",
+                        "expected_action": "call_functions", "generator": "real_tool_llm",
                         "gold_calls": [{"tool_name": a["name"], "arguments": sa["arguments"]},
                                        {"tool_name": b["name"], "arguments": sb["arguments"]}],
                     }
@@ -296,7 +296,7 @@ class RealToolLLMGenerator:
                     return {
                         "id": f"real_multistep_{ci}_{i:04d}", "source": "real_tool_xlsx", "split": "seen",
                         "scenario": "dependency", "scenario_family": "multi_step", "instruction": q,
-                        "customer_verified": True, "expected_action": "call_functions", "generator": "real_tool_llm",
+                        "expected_action": "call_functions", "generator": "real_tool_llm",
                         "gold_steps": [{"tool_name": src["name"], "arguments": s1["arguments"]},
                                        {"tool_name": dep["name"], "arguments": s2args, "depends_on_previous": True}],
                     }
@@ -317,7 +317,7 @@ class RealToolLLMGenerator:
                 out.append({
                     "id": f"real_abstain_{batch}_{j:03d}", "source": "real_tool_xlsx", "split": "seen",
                     "scenario": "irrelevance", "scenario_family": "abstain", "instruction": q.strip(),
-                    "customer_verified": True, "expected_action": "abstain", "generator": "real_tool_llm",
+                    "expected_action": "abstain", "generator": "real_tool_llm",
                     "prediction": {"action": "abstain", "reason": "ngoài phạm vi công cụ KPI"},
                 })
                 if len(out) >= n:

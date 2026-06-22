@@ -53,8 +53,9 @@ def build_sample_prompt(
 ) -> list[dict[str, str]]:
     extra = [sample["masked_tool"]] if sample.get("masked_tool") else None
     if is_real_sample(sample) and real_assets:
-        # Real = read-only → no contract context (contract_registry=None).
-        return build_prompt_messages(sample, real_assets.registry, None, extra_tools=extra)
+        # Real = read-only → no contract context; inject reference codes for name↔code mapping.
+        return build_prompt_messages(sample, real_assets.registry, None, extra_tools=extra,
+                                     references=real_assets.references)
     return build_prompt_messages(sample, tool_registry, contract_registry, extra_tools=extra)
 
 

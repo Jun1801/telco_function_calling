@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.generation.sft_formatter import QWEN_FAMILY_MODELS, SYSTEM_PROMPT
+from src.generation.sft_formatter import QWEN_FAMILY_MODELS, SYSTEM_PROMPT, SYSTEM_PROMPT_REAL
 from src.registry.contract_registry import ContractRegistry
 from src.registry.tool_registry import ToolRegistry
 
@@ -14,6 +14,7 @@ def build_prompt_messages(
     contract_registry: ContractRegistry | None = None,
     max_tools: int = 8,
     extra_tools: list[dict[str, Any]] | None = None,
+    references: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     tools = _select_prompt_tools(sample, tool_registry, max_tools)
     if extra_tools:
@@ -34,13 +35,27 @@ def build_prompt_messages(
         contracts = [_compact_contract(contract_registry.get(tool["name"])) for tool in tools]
         context["customer_verified"] = sample.get("customer_verified", True)
         context["tool_contracts"] = [contract for contract in contracts if contract]
+    # Reference code catalogues: injected for real tools so the model can map
+    # Vietnamese names to codes (e.g. "Hà Nội" → "HNI") without guessing.
+    if references:
+        loc_map: dict[str, str] = {}
+        for item in references.get("location_code", []):
+            loc_map.setdefault(item["code"], item["name"])
+        context["reference_codes"] = {
+            "location_code": loc_map,
+            "kpi_code": {item["code"]: item["meaning"] for item in references.get("kpi_code", [])},
+            "unit_code": {item["code"]: item["name"] for item in references.get("unit_code", [])},
+        }
+    is_real = contract_registry is None
+    sys_prompt = SYSTEM_PROMPT_REAL if is_real else SYSTEM_PROMPT
+    context_label = "Available tool schemas:" if is_real else "Available tool and contract context:"
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": sys_prompt},
         {
             "role": "user",
             "content": (
                 f"User request: {sample['instruction']}\n\n"
-                "Available tool and contract context:\n"
+                f"{context_label}\n"
                 f"{json.dumps(context, ensure_ascii=False, indent=2)}"
             ),
         },
