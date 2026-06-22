@@ -10,7 +10,7 @@ real_station_catalogue.json.
 Outputs (/kaggle/working): sft_train_real.jsonl + eval_real_*.jsonl + report.
 
 Env vars:
-  GEN_MODEL   HuggingFace model ID (default: Qwen/Qwen3-32B-Instruct)
+  GEN_MODEL   HuggingFace model ID (default: Qwen/Qwen3-32B)
   SCALE       raw generation multiplier for train families (default: 1.0)
   EVAL_SCALE  multiplier for eval hold-out targets (default: 1.0)
   BACKEND       vllm | transformers (default: transformers)
@@ -33,7 +33,7 @@ from pathlib import Path
 
 DATA = Path(os.environ.get("DATA_DIR", "/kaggle/input/telco-real-tools"))
 OUT = Path(os.environ.get("OUT_DIR", "/kaggle/working"))
-MODEL = os.environ.get("GEN_MODEL", "Qwen/Qwen3-32B-Instruct")
+MODEL = os.environ.get("GEN_MODEL", "Qwen/Qwen3-32B")
 SCALE = float(os.environ.get("SCALE", "1.0"))
 EVAL_SCALE = float(os.environ.get("EVAL_SCALE", "1.0"))
 # QUANTIZATION: "bitsandbytes" for 4-bit (A100 40GB), None for fp16 (A100 80GB / H100).
