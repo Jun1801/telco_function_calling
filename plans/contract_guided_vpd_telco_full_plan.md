@@ -44,7 +44,7 @@ Kế hoạch kết hợp các ý tưởng chính từ:
 1. Model có gọi đúng function Telco đã thấy trong training không?
 2. Model có gọi được function mới chỉ nhờ đọc schema ở inference không?
 3. Tool-name masking có giúp model bớt học thuộc tên hàm không?
-4. Contract-aware reward có giảm function call đúng schema nhưng sai nghiệp vụ không?
+4. ~~Contract-aware reward có giảm function call đúng schema nhưng sai nghiệp vụ không?~~ **(BỎ — real KPI read-only, không có precondition/permission; "nghiệp vụ" thu về reference-code: mã hợp lệ trong catalogue)**
 5. Rich language feedback có cải thiện policy tốt hơn scalar reward đơn thuần không?
 6. VPD có tốt hơn SFT, Feedback-SDFT và passive SDPO không?
 7. Progressive soft-to-strict reward có giúp training ổn định hơn strict reward từ đầu không?
@@ -55,53 +55,44 @@ Kế hoạch kết hợp các ý tưởng chính từ:
 
 # 2. Đóng góp kỹ thuật dự kiến
 
-## Contribution 1 — Contract-aware Telco Function Calling Environment
-
-Xây môi trường function calling kiểm chứng được gồm:
+## Contribution 1 — Schema + Reference-aware Telco Function Calling Environment
+Môi trường kiểm chứng (real):
 
 ```text
-JSON schema
-business preconditions
-postconditions
-permissions
-side effects
-risk levels
-tool dependencies
-mock execution
+JSON schema (enum/type/required/pattern)
+reference-code ∈ catalogue (location/kpi/unit/station)
+gold-diff (function + arguments so gold dựng từ catalogue)
 ```
 
-Một function call chỉ được xem là đúng khi:
+Một function call (real) đúng khi:
 
 ```text
-schema valid
-AND contract valid
-AND execution success
-AND task success
+schema valid  AND  reference-code valid  AND  khớp gold (function + args)
 ```
 
-## Contribution 2 — Telco-ToolACE-mini Data Pipeline
+(Synthetic legacy — môi trường giao dịch: schema ∧ contract ∧ execution ∧ task; preconditions/postconditions/permissions/side_effects/risk/mock execution.)
 
-Sinh dữ liệu:
+## Contribution 2 — Real-KPI Data Pipeline (construct-then-paraphrase)
+
+Sinh dữ liệu (real, §7):
 
 ```text
-seen tools
-unseen tools
+seen tools · unseen tools
 renamed/masked tools
-multi-turn clarification
-contract violations
-schema changes
-deprecated tools
-parallel/multi-step calls
-hard negatives
+missing-slot / ask-clarification
+multi-step (ReAct) · parallel calls
+abstain (out-of-scope)
 ```
 
-Tất cả ground truth và negative samples được verify bằng:
+Gold dựng từ catalogue (không sai); verify bằng **Dual-Layer Verification**:
 
 ```text
 schema validator
-contract checker
-mock executor
+reference-code ∈ catalogue        (thay contract checker)
+city↔code + date + dedupe + optional semantic LLM-judge
 ```
+
+> (Synthetic-legacy thêm: contract violations · schema-change · deprecated · contract checker · mock executor.)
 
 ## Contribution 3 — Tool-Generalization Curriculum
 
@@ -124,10 +115,10 @@ Reward chuyển dần:
 
 ```text
 soft component-level reward
-→ strict JSON/AST + contract + execution reward
+→ strict JSON/AST reward (real: + reference-code; synthetic-legacy: + contract + execution)
 ```
 
-Reward được decomposed theo:
+Reward được decomposed theo (real):
 
 ```text
 action
@@ -135,11 +126,10 @@ function name
 argument keys
 argument values
 schema
-contract
-execution
-task
-safety
+reference-code (mã ∈ catalogue)
 ```
+
+(Synthetic-legacy có thêm: `contract · execution · task · safety` — KHÔNG dùng cho real read-only.)
 
 ## Contribution 5 — VPD-style Adaptive Self-Teacher
 
@@ -165,28 +155,23 @@ Student học teacher distribution trong M-step.
 
 # 3. Kiến trúc tổng thể
 
+
 ```text
-Telco Tool Registry + Tool Contracts
+Real KPI Tool Registry (26 hàm, read-only) + reference catalogues
         ↓
-Telco-ToolACE-mini Data Generator
+Real data generator (construct-then-paraphrase) + Dual-Layer Verification
         ↓
-Seen / Unseen / Evolution Benchmark
+Seen / Unseen / Masked / Missing / Multi(ReAct) / Parallel / Abstain benchmark
         ↓
-Hybrid Tool Retrieval: BM25 + BGE-M3 + Reranker
+Qwen3-4B Function Calling Policy
         ↓
-Context / Slot / Risk Analyzer
+Schema Validator + Reference-code check   (KHÔNG contract/executor)
         ↓
-Qwen3 SLM Function Calling Policy
-        ↓
-Schema Validator + Contract Checker + Mock Executor
-        ↓
-Scalar Reward + Structured Feedback
+Scalar Reward + Structured Feedback (gold-diff, reveal_gold off)
         ↓
 SFT → Feedback-SDFT → SDPO → VPD-lite
         ↓
-PI-SA-CS-LinUCB Strategy Router
-        ↓
-Demo + Evaluation Dashboard
+(synthetic-legacy / chưa làm: Contract Checker · Mock Executor · BM25+BGE retrieval · Bandit Router · Demo)
 ```
 
 ---
@@ -196,7 +181,7 @@ Demo + Evaluation Dashboard
 | Thành phần | Công nghệ |
 |---|---|
 | Language | Python 3.11 |
-| Main model | Qwen3.5-4B hoặc Qwen3.5-9B |
+| Main model | Qwen3-4B hoặc Qwen3-8B |
 | Stable baseline | Qwen2.5-Coder-7B-Instruct |
 | Optional external teacher | Qwen3-Coder hoặc Qwen3.5-9B |
 | Fine-tuning | Unsloth + QLoRA |
@@ -268,160 +253,123 @@ External teacher không phải core self-distillation.
 
 ## 6.1. Số lượng
 
-MVP:
-
 ```text
-30–40 tools
+26 hàm KPI thật:
+  18 seen   (huấn luyện + eval seen)
+  8 unseen  (chỉ eval, zero-shot đọc schema):
+    radio_kpi · thong_ke_cntt · top_tram_max · top_tram_min ·
+    top_cell_max · top_cell_min · top_sub_attached_max · top_sub_attached_min
 ```
 
-Trong đó:
+Catalogue đóng (gold dựng từ đây — xem §7.2):
 
 ```text
-25 seen tools
-10 unseen tools
-5 hard-negative tools
-10–15 tools có contract đầy đủ
-50 synthetic distractor tools cho scale test
+location_code : 48   (VNM/khu vực/tỉnh/huyện)
+kpi_code      : 12
+unit_code     : 9
+station_code  : 144  (synthetic EHB000NN, phủ đủ 48 location)
 ```
 
-## 6.2. Tool schema
+## 6.2. Tool schema (real, read-only)
+
+Enum được **inject** cho `location_code` / `kpi_code` / `unit_code` / `station_code` (đóng theo catalogue).
+`object_code` **KHÔNG** enum (chấp nhận mã location HOẶC station — tập mở). Contract = stub rỗng (read-only).
 
 ```json
 {
-  "name": "register_plan",
-  "domain": "plan_management",
-  "description": "Đăng ký một gói cước cho thuê bao.",
+  "name": "vung_phu_province",
+  "domain": "kpi_reporting",
+  "description": "Tra cứu hiện trạng vùng phủ sóng của Viettel theo loại công nghệ 2G/3G/4G/5G.",
+  "side_effect": "read",
+  "split": "seen",
   "parameters": {
     "type": "object",
     "properties": {
-      "msisdn": {
+      "location_code": {
         "type": "string",
-        "pattern": "^[0-9]{10}$",
-        "description": "Số thuê bao 10 chữ số."
+        "enum": ["VNM", "KV1", "KV2", "KV3", "HNI", "HCM", "..."],
+        "description": "Mã vị trí (huyện/tỉnh/khu vực/toàn quốc) — đóng theo catalogue 48 mã."
       },
-      "plan_id": {
+      "tech_type": {
         "type": "string",
-        "description": "Mã gói cước."
+        "enum": ["2G", "3G", "4G", "5G"],
+        "description": "Loại công nghệ cần tra cứu."
       }
     },
-    "required": ["msisdn", "plan_id"]
-  },
-  "contract": {
-    "preconditions": [
-      "subscriber_status == active",
-      "customer_verified == true",
-      "plan_id in available_plans"
-    ],
-    "postconditions": [
-      "subscription.plan_id == requested_plan_id"
-    ],
-    "side_effects": [
-      "change_subscription",
-      "charge_fee",
-      "send_sms_notification"
-    ],
-    "risk_level": "high",
-    "permission_required": "customer_verified"
+    "required": ["location_code", "tech_type"]
   },
   "status": "active",
   "replacement_tool": null
 }
 ```
 
+Contract (read-only → không precondition/side-effect):
+
+```json
+{"tool_name": "vung_phu_province", "preconditions": [], "side_effects": [], "permissions": []}
+```
+
 ---
 
-# 7. Data strategy — Telco-ToolACE-mini
+# 7. Data strategy — Real KPI (construct-then-paraphrase, ToolACE-adapted)
 
 ## 7.1. Public data warm-up
 
-Có thể dùng subset:
+Public function-calling data (chuẩn hóa qua `scripts/prepare_public_warmup.py`, chỉ normalize — không auto-tải):
 
 ```text
-xLAM Function Calling 60K
-ToolACE
-APIGen-MT-5K
-xLAM irrelevance
-Hermes function calling optional
+ToolACE · Hermes-Function-Calling · APIGen-MT · xLAM
+→ data/public_warmup_*.jsonl  (đã ở dạng messages)
 ```
 
-Không dùng toàn bộ ngay.
+Mục tiêu = **format priming** (đọc schema, chọn hàm, parallel, multi-turn, no-tool). Trộn vào SFT M1
+một-stage gộp (warmup + real domain). Hiện có ~3K mẫu normalized; dùng subset.
 
-Khuyến nghị:
+## 7.2. Real custom data — construct-then-paraphrase
+
+**Gold dựng từ catalogue đóng (§6.1) → gold KHÔNG THỂ SAI; LLM chỉ viết câu hỏi tiếng Việt.**
+Dual-Layer Verification (rule: schema + code∈catalogue + date + city↔code word-boundary + length; optional
+semantic LLM-judge) + dedupe Jaccard 0.85 + arg-cap 3. Canonical: `data/real_data/outputs-2/` (Kaggle vLLM).
+
+Train **2613** mẫu (`data/sft_train_real.jsonl`):
 
 ```text
-10K–20K general tool-use samples
+single_step_valid : 828
+missing_slot       : 430   (ask_clarification)
+multi_step (ReAct) : 520   (R1+R2, xem §8.2)
+masking            : 350   (func_X, xem §7.3)
+abstain            : 289
+parallel           : 196
 ```
 
-Mục tiêu:
+Eval **~1195** mẫu (7 split `data/eval_real_*.jsonl`):
 
 ```text
-format
-tool schema reading
-general function selection
-parallel calls
-multi-turn
-no-tool behavior
+seen 250 · unseen 150 · masked 170 · missing_slot 234 · multi_step 156 · parallel 80 · abstain 155
 ```
 
-## 7.2. Telco custom data
+(Audit độc lập `scripts/audit_real_data.py`: 0 defect mọi family.)
 
-MVP:
+## 7.3. Masking curriculum (real)
 
-```text
-1,000–1,500 Telco SFT samples
-500–1,000 feedback/correction samples
-```
-
-Scenario distribution:
-
-```text
-25% single-step valid calls
-15% missing-slot / ask-back
-10% abstention / permission
-20% contract-aware decisions
-10% multi-step/dependency
-5% parallel calls
-10% name/parameter masking
-5% schema change/deprecated tools
-```
-
-## 7.3. Masking curriculum
+Mẫu masking mang **`masked_tool`** = schema `func_X` nhúng trong prompt (gold gọi `func_X`); tool thật bị
+shadow + tắt distractor fallback (xem `routing.build_sample_prompt`). Đã có sẵn trong train (350) + eval masked (170).
 
 ### Stage 1 — Real names
-
 ```json
-{
-  "name": "activate_esim",
-  "parameters": {
-    "msisdn": {},
-    "eid": {}
-  }
-}
+{"name": "vung_phu_province", "parameters": {"location_code": {}, "tech_type": {}}}
 ```
 
 ### Stage 2 — Mask function name
-
 ```json
-{
-  "name": "func_7",
-  "description": "Kích hoạt eSIM cho thuê bao bằng EID."
-}
+{"name": "func_3", "description": "Tra cứu hiện trạng vùng phủ sóng theo công nghệ.",
+ "parameters": {"location_code": {}, "tech_type": {}}}
 ```
 
-### Stage 3 — Mask function và parameters
-
+### Stage 3 — Mask function + parameters
 ```json
-{
-  "name": "func_7",
-  "parameters": {
-    "param_1": {
-      "description": "Số thuê bao"
-    },
-    "param_2": {
-      "description": "Mã nhận dạng eSIM"
-    }
-  }
-}
+{"name": "func_3", "parameters": {"param_1": {"description": "Mã vị trí"},
+ "param_2": {"description": "Loại công nghệ 2G/3G/4G/5G"}}}
 ```
 
 Tỉ lệ gợi ý:
@@ -435,43 +383,38 @@ Tỉ lệ gợi ý:
 
 ---
 
-# 8. Multi-turn augmentation
+# 8. Multi-step & augmentation (real, read-only)
 
-Áp dụng bốn kiểu.
+## 8.1. Missing-slot → ask_clarification (single-turn)
 
-## 8.1. Missing parameter
+Bỏ một slot bắt buộc khỏi câu hỏi; gold = `ask_clarification(asked_slots=[...])`. Cặp `from_date`/`to_date`
+luôn drop CÙNG nhau (một cụm thời gian). Ví dụ:
 
 ```text
-User: Đăng ký gói data giúp tôi.
-Agent: Bạn cho mình xin số thuê bao và mã gói.
-User: 0987654321, gói 5G_MAX100.
-Agent: call register_plan(...)
+User: Cho tôi vùng phủ sóng 5G ở Hà Nội.     # thiếu… (đủ slot ⇒ gọi luôn); nếu thiếu location/thời gian:
+Gold: {"action": "ask_clarification", "asked_slots": ["from_date", "to_date"]}
 ```
 
-## 8.2. Delayed tool availability
+## 8.2. ReAct multi-step (Cách B)
+
+Phụ thuộc dữ liệu được phân rã thành **các record single-turn** (tái dùng loss single-turn, không cần multi-turn masking):
 
 ```text
-Turn 1:
-register_plan chưa có.
-
-Turn 2:
-register_plan_v2 được thêm vào registry.
+R1: {"action":"call_function","call":{"tool_name":"regional_station_info","arguments":{...}}}
+    → observation tổng hợp (src/executor/kpi_mock.py) trả MÃ TRẠM thật, ví dụ EHB00118
+R2: {"action":"call_function","call":{"tool_name":"radio_traffic",
+     "arguments":{"object_code":"EHB00118", ...}}}   # dùng mã trạm THẬT từ R1
 ```
 
-## 8.3. User correction
+## 8.3. Parallel calls
+
+Nhiều hàm độc lập trong một lượt; gold = `call_functions(calls=[...])`; chấm set-by-name (xem §9, §10).
+
+## 8.4. (Synthetic legacy) User-correction & backend-challenge
 
 ```text
-Agent gọi sai plan_id.
-User nói: Tôi muốn gói DATA70, không phải DATA120.
-Agent sửa call.
-```
-
-## 8.4. Backend challenge
-
-```text
-Agent gọi register_plan.
-Backend feedback: subscriber suspended.
-Agent chuyển sang ask/abstain.
+Không áp dụng cho real read-only (không có giao dịch/đổi trạng thái/suspend).
+Giữ làm reference cho domain synthetic.
 ```
 
 ---
@@ -671,43 +614,69 @@ Penalties:
 
 # 10. Structured feedback design
 
-Output gồm hai phần:
-
-```text
-machine-readable feedback
-human-readable language feedback
-```
-
-Example:
+Feedback giữ **hai phần** (machine-readable + human-readable), shape ổn định để teacher/VPD/Feedback-SDFT dùng chung:
 
 ```json
 {
-  "reward": 0.31,
-  "status": "failed",
-  "correct_components": {
-    "function_name": true,
-    "argument_keys": true,
-    "schema": true
-  },
-  "incorrect_components": {
-    "contract": false,
-    "execution": false
-  },
+  "machine_status": "ok | schema_invalid | wrong_call | wrong_action | format_error",
   "errors": [
-    {
-      "type": "precondition_failed",
-      "condition": "subscriber_status == active",
-      "actual": "suspended"
-    }
+    {"type": "...", "code": "...", "path": "arguments.<key>",
+     "actual": "...", "expected": "(chỉ khi reveal_gold=True)",
+     "message": "...", "suggested_action": "..."}
   ],
-  "suggested_action": "ask_clarification",
-  "feedback_text": [
-    "The selected function and arguments are schema-valid.",
-    "The subscriber is suspended, but register_plan requires an active subscriber.",
-    "The correct action is ask_clarification, not call_function."
-  ]
+  "feedback_text": ["dòng người đọc 1", "..."]
 }
 ```
+
+## 10.1. Ba nguồn lỗi (ưu tiên giảm dần)
+
+```text
+(0) Schema layer (SchemaValidator) — ưu tiên cao nhất, sai schema thì chỉ báo schema:
+    invalid_enum · invalid_type · missing_arg · unknown_arg · pattern_mismatch · deprecated_tool · unknown_tool
+
+(A) Gold-diff (so call schema-valid với gold):
+    wrong_function · wrong_argument_value · missing_argument · extra_argument
+    unnecessary_call  (call parallel không khớp gold → 1 tín hiệu, KHÔNG spam per-arg)
+    → reveal_gold=False MẶC ĐỊNH: chỉ báo sai ở đâu, KHÔNG lộ giá trị gold
+      (teacher phải tự suy). reveal_gold=True chỉ cho ablation.
+
+(B) Reference-code (location_code/kpi_code/unit_code không có enum):
+    invalid_code — mã ngoài catalogue (danh mục hợp lệ lấy từ catalogue, không phải gold → không leak)
+```
+
+## 10.2. Feedback theo action
+
+```text
+call_function      → (0)/(A)/(B)
+call_functions     → set-by-name; call thừa → unnecessary_call
+ask_clarification  → missing_slot_not_handled (kèm missing_slots) + chấm recall slot
+abstain            → unsafe_or_forbidden_action nếu không abstain
+parse lỗi          → format_error, reward 0 (KHÔNG tính là abstain hợp lệ)
+```
+
+`suggested_action` mỗi lỗi ∈ `{ask_clarification, abstain, fix_arguments, call_function, call_functions, fix_format}`.
+
+## 10.3. Renderer cho teacher
+
+`src/reward/feedback_renderer.render_teacher_feedback(feedback, lang)` dựng text giàu **từ structured codes**
+(header theo machine_status + mỗi lỗi 1 dòng + gợi ý), **song ngữ `vi` (real, mặc định) / `en` (synthetic)**.
+Đã **wire** vào teacher context của SDPO (`train_sdpo`) và correction (`build_corrections`) — chọn lang theo `record.source`.
+
+## 10.4. Ví dụ (real, reveal_gold=False)
+
+```json
+{
+  "machine_status": "wrong_call",
+  "errors": [
+    {"type": "wrong_call", "code": "wrong_argument_value", "path": "arguments.location_code",
+     "actual": "HCM", "message": "Wrong value for location_code", "suggested_action": "fix_arguments"}
+  ],
+  "feedback_text": ["Wrong value for location_code"]
+}
+```
+
+Render (vi): `Phản hồi gọi sai (hàm hoặc tham số):` → `• Sai giá trị tham số \`arguments.location_code\` (bạn dùng 'HCM'). → Gợi ý: sửa lại tham số rồi gọi hàm.`
+(reveal_gold=True mới thêm `"expected": "HNI"` và “Đúng phải là 'HNI'”.)
 
 ---
 
@@ -715,14 +684,13 @@ Example:
 
 ## Stage 0 — Evaluator-first
 
-Trước khi train:
+Trước khi train (real):
 
 ```text
 tool registry chạy được
 schema validator chạy được
-contract checker chạy được
-mock executor chạy được
-reward scorer chạy được
+reference-code check chạy được      (thay contract checker — read-only, không mock executor)
+reward scorer + structured feedback chạy được
 ```
 
 Output bắt buộc:
@@ -881,24 +849,24 @@ scalar outcomes
 structured feedback
 ```
 
-Positive trajectories:
+Positive trajectories (real):
 
 ```text
 schema valid
-contract valid
-execution success
+reference-code valid (mã ∈ catalogue)
+khớp gold (function + arguments)
 ```
 
-Negative trajectories:
+Negative trajectories (real):
 
 ```text
-schema fail
-contract fail
-unsafe
-deprecated
+schema fail (invalid_enum/type/missing_arg/…)
+invalid_code (mã ngoài catalogue)
 wrong function
 wrong args
+sai action (nên ask_clarification / abstain)
 ```
+
 
 Teacher objective:
 
@@ -975,35 +943,28 @@ max_generation_tokens: 256
 # 12. Feedback curriculum
 
 ## Phase A — Schema feedback
-
 ```text
-invalid JSON
-missing field
-wrong type
-invalid enum
-unknown function
+invalid_enum · invalid_type · missing_arg · unknown_arg · pattern_mismatch · unknown_tool · deprecated_tool
+(+ parse_error → format_error)
 ```
 
-## Phase B — Contract feedback
-
+## Phase B — Business / reference feedback (real)
 ```text
-precondition failed
-permission missing
-unsafe side effect
-deprecated tool
+invalid_code            (mã ngoài catalogue location/kpi/unit)
+wrong_argument_value    (giá trị sai so gold; reveal_gold=False)
+wrong_function          (chọn sai hàm)
+missing_slot_not_handled / unsafe_or_forbidden_action  (sai action: nên ask/abstain)
+— synthetic legacy: precondition_failed · permission_denied · deprecated/unsafe side effect
 ```
 
-## Phase C — Multi-tool feedback
-
+## Phase C — Multi-call feedback
 ```text
-wrong order
-missing dependency
-wrong result propagation
-unnecessary call
+unnecessary_call        (call parallel thừa, không khớp gold nào)
+missing_argument / extra_argument
+ReAct dependency: R2 dùng sai mã trạm từ observation của R1
 ```
 
 Training order:
-
 ```text
 A → A+B → A+B+C
 ```
@@ -1014,11 +975,12 @@ A → A+B → A+B+C
 
 Chỉ làm sau khi model pipeline ổn.
 
+
 Arms:
 
 ```text
 direct_call
-schema_contract_reasoning
+schema_reference_reasoning   (real: thay schema_contract_reasoning)
 plan_then_call
 self_correct_once
 ask_clarification_biased
@@ -1028,14 +990,13 @@ abstain_safety_biased
 Context:
 
 ```text
-retrieval confidence
 missing slots
 schema complexity
-contract complexity
-risk level
+reference-code complexity   (real: thay contract complexity)
 tool novelty
 multi-step flag
 estimated cost
+(synthetic-legacy: retrieval confidence · risk level)
 ```
 
 Main algorithm:
@@ -1116,12 +1077,14 @@ SDPO
 VPD-lite
 ```
 
-## Contract ablation
+## ~~Contract ablation~~ → Reference-code ablation (real)
+
+> Contract checker BỎ (read-only). Thay bằng ablation reference-code:
 
 ```text
 schema-only
-schema + contract checker
-schema + contract + self-distillation
+schema + reference-code check
+schema + reference-code + self-distillation
 ```
 
 ## Teacher ablation
@@ -1136,19 +1099,19 @@ external teacher
 
 # 16. Evaluation datasets
 
+**Real (7 split đang dùng, ~1195 mẫu):**
+
 ```text
-eval_seen.jsonl
-eval_unseen.jsonl
-eval_masked_tools.jsonl
-eval_contract.jsonl
-eval_missing_slot.jsonl
-eval_abstention.jsonl
-eval_multi_step.jsonl
-eval_parallel.jsonl
-eval_schema_changed.jsonl
-eval_deprecated.jsonl
-eval_expanded_library.jsonl
+eval_real_seen.jsonl      (250)
+eval_real_unseen.jsonl    (150)
+eval_real_masked.jsonl    (170)
+eval_real_missing_slot.jsonl (234)
+eval_real_multi_step.jsonl   (156)
+eval_real_parallel.jsonl     (80)
+eval_real_abstain.jsonl      (155)
 ```
+
+(Synthetic-legacy 14 split: eval_seen/unseen/masked_tools/**contract**/missing_slot/abstention/multi_step/parallel/schema_changed/deprecated/evolution_*/expanded_library.)
 
 ---
 
@@ -1165,17 +1128,18 @@ execution_success_rate
 task_success_rate
 ```
 
-## Safety/contract metrics
+## Safety metrics (real)
+
+> BỎ `contract_validity` / `precondition_violation_rate` / `permission_violation_rate` / `unsafe_call_rate` /
+> `deprecated_tool_call_rate` (read-only, không contract). Real chỉ giữ:
 
 ```text
-contract_validity
-precondition_violation_rate
-permission_violation_rate
-unsafe_call_rate
-deprecated_tool_call_rate
-abstention_accuracy
-ask_back_accuracy
+abstention_accuracy   (abstain đúng khi ngoài scope)
+ask_back_accuracy     (hỏi đủ slot khi thiếu)
+reference_code_validity   (mã ∈ catalogue — thay cho contract_validity)
 ```
+
+(Synthetic-legacy: contract_validity · precondition/permission_violation_rate · unsafe/deprecated_call_rate.)
 
 ## Generalization metrics
 
@@ -1648,7 +1612,7 @@ MVP thành công nếu:
 ```text
 SFT > prompt-only trên seen tools
 masking cải thiện unseen/renamed tools
-Feedback-SDFT giảm schema/contract errors
+Feedback-SDFT giảm schema + reference-code (mã sai) errors    (real: KHÔNG còn contract errors)
 ```
 
 Strong result nếu:
@@ -1662,7 +1626,7 @@ Research-level result nếu:
 
 ```text
 VPD-lite > SDPO
-đặc biệt trên unseen tools, contract violations và schema changes
+đặc biệt trên unseen tools, masked tools và sai mã/sai action (real)
 ```
 
 ---
@@ -1692,7 +1656,11 @@ Tên chính:
 
 Tên mô tả:
 
-> A VPD-style adaptive self-distillation method for contract-aware and schema-generalized Telco function calling.
+> A VPD-style adaptive self-distillation method for **schema- and reference-grounded**, schema-generalized Telco function calling.
+
+> **Lưu ý (real):** đã BỎ contract-aware (read-only). "Contract-Guided" giờ hiểu theo nghĩa **được dẫn dắt bởi
+> schema + reference-code (catalogue) + gold-diff**, KHÔNG phải business contract giao dịch. Nếu muốn tên chính xác
+> hơn có thể đổi thành **Schema-/Reference-Guided VTD** — cần bạn xác nhận trước khi đổi title toàn dự án.
 
 Chỉ nên claim là method mới sau khi thực sự triển khai được E-step teacher adaptation và M-step distribution distillation.
 

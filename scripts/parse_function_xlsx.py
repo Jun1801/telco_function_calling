@@ -3,7 +3,6 @@
 Outputs:
   data/real_tools.json           — 26 tools (tools.json format) + seed_examples + split,
                                     with reference codes injected as enums in the schema.
-  data/real_tool_contracts.json  — stub contracts (read-only tools, no preconditions).
   data/real_reference_codes.json — location/kpi/unit code tables for the generator.
   data/real_station_catalogue.json — synthetic station catalogue (station_code → location).
 """
@@ -208,13 +207,6 @@ def parse_functions(wb, references: dict, stations: list[dict]) -> list[dict]:
     return tools
 
 
-def build_contracts(tools: list[dict]) -> list[dict]:
-    return [
-        {"tool_name": t["name"], "preconditions": [], "side_effects": [], "permissions": []}
-        for t in tools
-    ]
-
-
 def main() -> None:
     if not XLSX.exists():
         sys.exit(f"Missing {XLSX}")
@@ -222,11 +214,10 @@ def main() -> None:
     references = parse_reference_codes(wb)
     stations = build_station_catalogue(references)
     tools = parse_functions(wb, references, stations)
-    contracts = build_contracts(tools)
+    # Real KPI tools are read-only → no contracts (no precondition/permission/side-effect).
 
     data_dir = ROOT / "data"
     (data_dir / "real_tools.json").write_text(json.dumps(tools, ensure_ascii=False, indent=2), encoding="utf-8")
-    (data_dir / "real_tool_contracts.json").write_text(json.dumps(contracts, ensure_ascii=False, indent=2), encoding="utf-8")
     (data_dir / "real_reference_codes.json").write_text(json.dumps(references, ensure_ascii=False, indent=2), encoding="utf-8")
     (data_dir / "real_station_catalogue.json").write_text(json.dumps(stations, ensure_ascii=False, indent=2), encoding="utf-8")
 

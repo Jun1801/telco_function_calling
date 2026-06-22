@@ -31,7 +31,6 @@ def is_real_sample(sample: dict[str, Any]) -> bool:
 @dataclass
 class RealAssets:
     registry: ToolRegistry
-    contracts: ContractRegistry
     references: dict[str, Any] | None
 
 
@@ -40,10 +39,10 @@ def load_real_assets(data_dir: str | Path) -> RealAssets | None:
     if not (data_dir / "real_tools.json").exists():
         return None
     registry = ToolRegistry.from_file(data_dir / "real_tools.json")
-    contracts = ContractRegistry.from_file(data_dir / "real_tool_contracts.json")
+    # Real KPI tools are read-only → no contracts (no preconditions/permissions).
     ref_path = data_dir / "real_reference_codes.json"
     references = json.loads(ref_path.read_text(encoding="utf-8")) if ref_path.exists() else None
-    return RealAssets(registry, contracts, references)
+    return RealAssets(registry, references)
 
 
 def build_sample_prompt(
@@ -54,7 +53,8 @@ def build_sample_prompt(
 ) -> list[dict[str, str]]:
     extra = [sample["masked_tool"]] if sample.get("masked_tool") else None
     if is_real_sample(sample) and real_assets:
-        return build_prompt_messages(sample, real_assets.registry, real_assets.contracts, extra_tools=extra)
+        # Real = read-only → no contract context (contract_registry=None).
+        return build_prompt_messages(sample, real_assets.registry, None, extra_tools=extra)
     return build_prompt_messages(sample, tool_registry, contract_registry, extra_tools=extra)
 
 

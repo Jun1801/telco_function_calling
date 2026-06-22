@@ -33,6 +33,9 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from src.evaluation.routing import REAL_SOURCE
+from src.reward.feedback_renderer import render_teacher_feedback
+
 
 # ---------------------------------------------------------------------------
 # Teacher context builder (mirrors SDPO reprompt_template)
@@ -44,14 +47,19 @@ SDPO_TEACHER_SUFFIX_TEMPLATE = (
 )
 
 
-def _format_feedback(feedback: dict[str, Any]) -> str:
+def _format_feedback(feedback: dict[str, Any], lang: str = "vi") -> str:
+    # Rich structured rendering (path/expected/actual/suggested) beats a flat
+    # join — the teacher reasons better from it. Falls back for empty feedback.
+    if feedback.get("errors"):
+        return render_teacher_feedback(feedback, lang)
     texts = feedback.get("feedback_text", [])
     if texts:
         return " ".join(texts)
-    errors = feedback.get("errors", [])
-    if errors:
-        return "; ".join(e.get("type", str(e)) for e in errors)
     return "The response was incorrect."
+
+
+def _record_lang(record: dict[str, Any]) -> str:
+    return "vi" if record.get("source") == REAL_SOURCE else "en"
 
 
 def build_teacher_messages(record: dict[str, Any]) -> list[dict[str, str]] | None:
@@ -61,17 +69,18 @@ def build_teacher_messages(record: dict[str, Any]) -> list[dict[str, str]] | Non
     """
     best_idx = record["best_rollout_idx"]
     rollouts = record["rollouts"]
+    lang = _record_lang(record)
 
     if best_idx < 0:
         # No successful sibling — use feedback-only teacher context
         # Pick the rollout with highest reward as "closest attempt"
         best_idx = max(range(len(rollouts)), key=lambda j: rollouts[j]["reward"])
         best_response = json.dumps(rollouts[best_idx]["prediction"], ensure_ascii=False)
-        feedback_text = _format_feedback(rollouts[best_idx]["feedback"])
+        feedback_text = _format_feedback(rollouts[best_idx]["feedback"], lang)
         has_demo = False
     else:
         best_response = json.dumps(rollouts[best_idx]["prediction"], ensure_ascii=False)
-        feedback_text = _format_feedback(rollouts[best_idx]["feedback"])
+        feedback_text = _format_feedback(rollouts[best_idx]["feedback"], lang)
         has_demo = True
 
     original_msgs = record["prompt"]

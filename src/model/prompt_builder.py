@@ -11,7 +11,7 @@ from src.registry.tool_registry import ToolRegistry
 def build_prompt_messages(
     sample: dict[str, Any],
     tool_registry: ToolRegistry,
-    contract_registry: ContractRegistry,
+    contract_registry: ContractRegistry | None = None,
     max_tools: int = 8,
     extra_tools: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, str]]:
@@ -23,14 +23,17 @@ def build_prompt_messages(
         # never leaks the real tool name into the prompt.
         existing = {tool["name"] for tool in tools}
         tools = [_project_extra_tool(t) for t in extra_tools if t["name"] not in existing] + tools
-    contracts = [_compact_contract(contract_registry.get(tool["name"])) for tool in tools]
-    context = {
+    context: dict[str, Any] = {
         "base_model_family": "qwen",
         "supported_base_models": QWEN_FAMILY_MODELS,
-        "customer_verified": sample.get("customer_verified", True),
         "available_tools": tools,
-        "tool_contracts": [contract for contract in contracts if contract],
     }
+    # Contracts/customer_verified are transactional concepts — only the synthetic
+    # registry carries them. Real KPI tools are read-only (contract_registry None).
+    if contract_registry is not None:
+        contracts = [_compact_contract(contract_registry.get(tool["name"])) for tool in tools]
+        context["customer_verified"] = sample.get("customer_verified", True)
+        context["tool_contracts"] = [contract for contract in contracts if contract]
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {

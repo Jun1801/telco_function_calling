@@ -41,11 +41,10 @@ def main() -> None:
     contract_registry = ContractRegistry.from_file(data_dir / "tool_contracts.json")
     mock_api = MockTelcoApi.from_file(data_dir / "mock_telco_db.json")
 
-    # Real read-only KPI tools (separate registry + schema-only evaluator + code tables).
-    real_registry = real_contracts = real_refs = None
+    # Real read-only KPI tools (separate registry + schema-only evaluator + code tables; no contracts).
+    real_registry = real_refs = None
     if (data_dir / "real_tools.json").exists():
         real_registry = ToolRegistry.from_file(data_dir / "real_tools.json")
-        real_contracts = ContractRegistry.from_file(data_dir / "real_tool_contracts.json")
         ref_path = data_dir / "real_reference_codes.json"
         real_refs = json.loads(ref_path.read_text(encoding="utf-8")) if ref_path.exists() else None
 
@@ -67,7 +66,7 @@ def main() -> None:
 
         if is_real:
             extra = [sample["masked_tool"]] if sample.get("masked_tool") else None
-            prompt = build_prompt_messages(sample, real_registry, real_contracts, extra_tools=extra)
+            prompt = build_prompt_messages(sample, real_registry, None, extra_tools=extra)
         else:
             prompt = build_prompt_messages(sample, tool_registry, contract_registry)
         rollouts = []
@@ -97,6 +96,7 @@ def main() -> None:
 
         record = {
             "id": sample["id"],
+            "source": sample.get("source"),
             "split": sample.get("split", "train"),
             "instruction": sample.get("instruction", ""),
             "expected_action": sample.get("expected_action", ""),

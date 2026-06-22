@@ -25,10 +25,12 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from src.evaluation.evaluator import evaluate_prediction
+from src.evaluation.routing import REAL_SOURCE
 from src.executor.mock_telco_api import MockTelcoApi
 from src.model.output_parser import parse_model_output
 from src.registry.contract_registry import ContractRegistry
 from src.registry.tool_registry import ToolRegistry
+from src.reward.feedback_renderer import render_teacher_feedback
 
 
 CORRECTION_REQUEST = (
@@ -54,7 +56,8 @@ def build_corrections(
     stats = {"attempted": 0, "valid": 0, "invalid": 0}
 
     for r in wrong:
-        feedback_text = _format_feedback(r["feedback"])
+        lang = "vi" if r.get("source") == REAL_SOURCE else "en"
+        feedback_text = _format_feedback(r["feedback"], lang)
         correction_prompt = r["prompt"] + [
             {"role": "assistant", "content": json.dumps(r["prediction"], ensure_ascii=False)},
             {"role": "user", "content": CORRECTION_REQUEST.format(feedback=feedback_text)},
@@ -111,13 +114,14 @@ def build_corrections(
     return stats
 
 
-def _format_feedback(feedback: dict[str, Any]) -> str:
+def _format_feedback(feedback: dict[str, Any], lang: str = "vi") -> str:
+    # Rich structured rendering so the model sees which arg/value is wrong + the
+    # suggested action, not just a flat string. Falls back for empty feedback.
+    if feedback.get("errors"):
+        return render_teacher_feedback(feedback, lang)
     texts = feedback.get("feedback_text", [])
     if texts:
         return " ".join(texts)
-    errors = feedback.get("errors", [])
-    if errors:
-        return "; ".join(e.get("type", str(e)) for e in errors)
     return "The response was incorrect."
 
 

@@ -104,3 +104,24 @@ def test_wrong_function_and_invalid_code_render() -> None:
     assert "kqi_province" in out
     assert "HANOI" in out
     assert out.count("\n") >= 2  # header + 2 lines
+
+
+def test_training_format_feedback_uses_rich_renderer() -> None:
+    # The SDPO/Feedback-SDFT teacher context must use the rich renderer, not a flat join.
+    from src.training.train_sdpo import _format_feedback as sdpo_fmt
+    from src.training.build_corrections import _format_feedback as corr_fmt
+    fb = {"machine_status": "wrong_call", "feedback_text": ["Wrong value for location_code"],
+          "errors": [{"type": "wrong_call", "code": "wrong_argument_value",
+                      "path": "arguments.location_code", "actual": "HCM",
+                      "message": "Wrong value for location_code", "suggested_action": "fix_arguments"}]}
+    for fmt in (sdpo_fmt, corr_fmt):
+        vi = fmt(fb, "vi")
+        assert "location_code" in vi and "HCM" in vi
+        assert "Gợi ý" in vi                      # vi suggested-action hint present
+        assert vi != " ".join(fb["feedback_text"])  # richer than the flat join
+        assert "Suggested" in fmt(fb, "en")       # en path works too
+
+
+def test_training_format_feedback_empty_fallback() -> None:
+    from src.training.train_sdpo import _format_feedback as sdpo_fmt
+    assert sdpo_fmt({"errors": [], "feedback_text": []}) == "The response was incorrect."

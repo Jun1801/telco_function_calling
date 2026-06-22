@@ -98,15 +98,18 @@ def test_bug2_synthetic_masked_injects_func_and_shadows_real_tool() -> None:
 
 
 def test_bug8_real_sample_gets_no_synthetic_fallback_tools() -> None:
-    contracts = ContractRegistry.from_file("data/real_tool_contracts.json")
+    # Real = read-only → no contract registry (contract_registry=None).
     sample = {"source": "real_tool_xlsx", "instruction": "Báo cáo sim roaming data package",
               "gold_call": {"tool_name": "vung_phu_province",
                             "arguments": {"location_code": "HNI", "tech_type": "5G"}}}
-    msgs = build_prompt_messages(sample, REAL_REG, contracts)
+    msgs = build_prompt_messages(sample, REAL_REG, None)
     body = msgs[1]["content"]
     # synthetic keyword/hardcoded fallbacks must not pollute a real-tool prompt
     assert "get_balance" not in body
     assert "activate_esim" not in body
+    # read-only real prompt carries no contract/customer_verified block
+    assert "tool_contracts" not in body
+    assert "customer_verified" not in body
 
 
 # ---- Bug 7: routing dispatches a real sample to the schema-only evaluator ----

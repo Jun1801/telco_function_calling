@@ -45,6 +45,7 @@ def main() -> None:
 
         record = {
             "id": sample["id"],
+            "source": sample.get("source"),
             "split": sample.get("split", "train"),
             "scenario": sample.get("scenario", ""),
             "expected_action": sample.get("expected_action", ""),
