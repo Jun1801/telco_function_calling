@@ -13,10 +13,12 @@ Env vars:
   GEN_MODEL   HuggingFace model ID (default: Qwen/Qwen3-32B-Instruct)
   SCALE       raw generation multiplier for train families (default: 1.0)
   EVAL_SCALE  multiplier for eval hold-out targets (default: 1.0)
-  BACKEND     vllm | transformers (default: transformers)
-  BATCH       batch size for transformers backend (default: 4)
-  DATA_DIR    path to input data (default: /kaggle/input/telco-real-tools)
-  OUT_DIR     output path (default: /kaggle/working)
+  BACKEND       vllm | transformers (default: transformers)
+  BATCH         batch size for transformers backend (default: 4)
+  QUANTIZATION  vLLM quantization method: "bitsandbytes" for 4-bit on A100 40GB,
+                unset for fp16 on A100 80GB / H100 (default: unset)
+  DATA_DIR      path to input data (default: /kaggle/input/telco-real-tools)
+  OUT_DIR       output path (default: /kaggle/working)
 """
 
 from __future__ import annotations
@@ -34,6 +36,8 @@ OUT = Path(os.environ.get("OUT_DIR", "/kaggle/working"))
 MODEL = os.environ.get("GEN_MODEL", "Qwen/Qwen3-32B-Instruct")
 SCALE = float(os.environ.get("SCALE", "1.0"))
 EVAL_SCALE = float(os.environ.get("EVAL_SCALE", "1.0"))
+# QUANTIZATION: "bitsandbytes" for 4-bit (A100 40GB), None for fp16 (A100 80GB / H100).
+QUANTIZATION = os.environ.get("QUANTIZATION", None) or None
 
 STEP1_REF = "<from_step_1>"
 TIER_MIX = ["simple", "simple", "simple", "medium", "medium", "medium", "medium", "complex", "complex", "complex"]
@@ -403,7 +407,12 @@ def main():
 
     if backend == "vllm":
         from vllm import LLM, SamplingParams
-        llm = LLM(model=MODEL, dtype="half", max_model_len=8192, gpu_memory_utilization=0.90, trust_remote_code=True)
+        _llm_kwargs: dict = dict(model=MODEL, max_model_len=8192, gpu_memory_utilization=0.90, trust_remote_code=True)
+        if QUANTIZATION:
+            _llm_kwargs["quantization"] = QUANTIZATION
+        else:
+            _llm_kwargs["dtype"] = "half"
+        llm = LLM(**_llm_kwargs)
         outs = llm.generate(prompts, SamplingParams(temperature=0.85, max_tokens=90, stop=["\n\n"]))
         texts = [o.outputs[0].text for o in outs]
     else:  # transformers — robust on Kaggle (no runtime compilation)
