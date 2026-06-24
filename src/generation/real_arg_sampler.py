@@ -16,8 +16,8 @@ from __future__ import annotations
 import random
 from typing import Any
 
-TIERS = ("simple", "medium", "complex")
-_TIER_ID = {"simple": 1, "medium": 2, "complex": 3}
+TIERS = ("simple", "medium", "complex", "rare")
+_TIER_ID = {"simple": 1, "medium": 2, "complex": 3, "rare": 4}
 
 _DATA_LEVEL_VN = {"day": "ngày", "week": "tuần", "month": "tháng", "quarter": "quý", "year": "năm"}
 
@@ -65,9 +65,19 @@ _PERIODS = {
         ("2024-12-01", "2025-02-28", "từ tháng 12/2024 đến 2/2025"),
         ("2023-11-01", "2023-11-30", "tháng 11/2023"),
     ],
+    "rare": [
+        ("2026-06-01", "2026-06-30", "tháng 6/2026"),
+        ("2025-01-01", "2025-12-31", "năm 2025"),
+        ("2024-01-01", "2024-12-31", "năm 2024"),
+        ("2025-06-01", "2025-06-30", "tháng 6/2025"),
+        ("2024-07-01", "2024-09-30", "quý 3/2024"),
+        ("2023-01-01", "2023-12-31", "năm 2023"),
+        ("2026-01-01", "2026-03-31", "quý 1/2026"),
+    ],
 }
 _DATA_LEVEL_BY_TIER = {"simple": ["month", "quarter"], "medium": ["month", "week", "quarter"],
-                       "complex": ["quarter", "year", "day", "week", "month"]}
+                       "complex": ["quarter", "year", "day", "week", "month"],
+                       "rare": ["month", "quarter", "year"]}
 
 # Human glosses for the most user-facing enums (fallback = raw value).
 _GLOSS = {
@@ -108,6 +118,7 @@ class ArgSampler:
             "simple": ["VNM", "HNI", "HCM", "DNG", "HPG", "CTO", "NAN", "THA", "QNH", "BNH", "KHA", "LDG"],
             "medium": [c for c in provinces if c not in ("HNI", "HCM", "DNG")],
             "complex": regions + countries + provinces[-8:],
+            "rare": countries + regions,
         }
         self.kpis = references["kpi_code"]
         self.units = references["unit_code"]

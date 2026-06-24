@@ -324,6 +324,159 @@ class RealToolLLMGenerator:
                     return out
         return out
 
+    # ---- Case: hard_abstain (telco-adjacent negatives) ----
+    def gen_hard_abstain(self, n_consumer: int = 50, n_revenue: int = 50, n_coverage: int = 50, n_irrelevance: int = 50) -> list[dict]:
+        """Hard abstain: telco-adjacent queries that look KPI-related but aren't supported."""
+        SYS_CONSUMER = ("Bạn tạo dữ liệu huấn luyện. Sinh câu hỏi tiếng Việt theo góc nhìn nhân viên kỹ thuật viễn thông "
+                        "về DỊCH VỤ KHÁCH HÀNG: đăng ký/hủy gói cước, kiểm tra hóa đơn, đổi SIM, báo mất SIM, "
+                        "kích hoạt eSIM, đăng ký 4G/5G cho thuê bao. "
+                        "Câu hỏi nghe có vẻ kỹ thuật nhưng là tác vụ provisioning/billing, "
+                        "KHÔNG thể trả lời bằng công cụ tra cứu KPI đọc dữ liệu. "
+                        "Trả JSON array các câu hỏi. Chỉ JSON.")
+        SYS_REVENUE = ("Bạn tạo dữ liệu huấn luyện. Sinh câu hỏi tiếng Việt về chỉ số KINH DOANH "
+                       "không có trong hệ thống KPI mạng: doanh thu, chi phí vận hành, CSAT/NPS, "
+                       "số khiếu nại, chi phí bảo trì, ngân sách triển khai. "
+                       "Nghe như tra cứu KPI nhưng là chỉ số kinh doanh/tài chính ngoài phạm vi. "
+                       "Trả JSON array các câu hỏi. Chỉ JSON.")
+        SYS_COVERAGE = ("Bạn tạo dữ liệu huấn luyện. Sinh câu hỏi về chất lượng sóng từ góc nhìn NGƯỜI DÙNG CÁ NHÂN: "
+                        "sóng tại địa chỉ nhà/văn phòng, chất lượng cuộc gọi tại tòa nhà, báo mất sóng GPS. "
+                        "Hệ thống chỉ có KPI tỉnh/khu vực, không tra theo địa chỉ/hộ gia đình. "
+                        "Trả JSON array các câu hỏi. Chỉ JSON.")
+        SYS_IRR = ("Sinh câu hỏi tiếng Việt NGOÀI phạm vi hệ thống tra cứu KPI/hạ tầng mạng viễn thông "
+                   "(vd: nấu ăn, du lịch, học tập, tài chính cá nhân). Trả JSON array. Chỉ JSON.")
+
+        def _gen_batch(system, n, scenario):
+            result = []
+            for batch in range((n + 14) // 15):
+                if len(result) >= n:
+                    break
+                arr = _extract_json_array(self.chat(system, f"Sinh 15 câu hỏi đa dạng. Lần {batch+1}.", 0.9, max_tokens=900))
+                for q in arr:
+                    if not isinstance(q, str) or not q.strip():
+                        continue
+                    idx = len(result)
+                    result.append({
+                        "id": f"real_hard_abstain_{scenario}_{idx:04d}",
+                        "source": "real_tool_xlsx", "split": "eval_real_hard_abstain",
+                        "scenario": scenario, "scenario_family": "hard_abstain",
+                        "instruction": q.strip(), "expected_action": "abstain",
+                        "generator": "real_tool_llm",
+                        "prediction": {"action": "abstain", "reason": "ngoài phạm vi công cụ KPI"},
+                    })
+                    if len(result) >= n:
+                        break
+            return result
+
+        out = []
+        out += _gen_batch(SYS_CONSUMER, n_consumer, "consumer_billing")
+        out += _gen_batch(SYS_REVENUE, n_revenue, "unsupported_kpi")
+        out += _gen_batch(SYS_COVERAGE, n_coverage, "consumer_coverage")
+        out += _gen_batch(SYS_IRR, n_irrelevance, "irrelevance")
+        return out
+
+    # ---- Case: hard_seen_rare (rare location codes) ----
+    def gen_hard_seen_rare(self, tool: dict, n: int) -> list[dict]:
+        """Hard seen: rare locations (countries, regions) instead of common provinces."""
+        sampled = [self.sampler.sample(tool, "rare", i) for i in range(n)]
+        specs = [self._spec(tool, s["hints"]) for s in sampled]
+        out = []
+        for batch_start in range(0, len(specs), 15):
+            chunk = specs[batch_start:batch_start + 15]
+            queries = self._paraphrase_batch(chunk)
+            for j, q in enumerate(queries):
+                k = batch_start + j
+                if k >= len(sampled):
+                    break
+                out.append({
+                    "id": f"real_hard_seen_rare_{tool['name']}_{k:04d}",
+                    "source": "real_tool_xlsx", "split": "eval_real_hard_seen",
+                    "scenario": "valid_kpi_read_rare", "scenario_family": "hard_seen",
+                    "instruction": q, "expected_action": "call_function",
+                    "generator": "real_tool_llm",
+                    "gold_call": {"tool_name": tool["name"], "arguments": sampled[k]["arguments"]},
+                })
+        return out
+
+    # ---- Case: hard_missing_multi (2+ required params absent) ----
+    def gen_hard_missing_multi(self, tool: dict, n: int) -> list[dict]:
+        """Hard missing_slot: 2+ required params absent simultaneously."""
+        required = tool["parameters"].get("required", [])
+        date_slots = [d for d in ("from_date", "to_date") if d in required]
+        other_slots = [s for s in ("location_code", "kpi_code", "station_code") if s in required]
+        combos = []
+        if date_slots and other_slots:
+            for other in other_slots:
+                combos.append((date_slots + [other], f"khoảng thời gian và {other}"))
+        if len(other_slots) >= 2:
+            combos.append((other_slots[:2], " và ".join(other_slots[:2])))
+        if not combos and date_slots:
+            combos.append((date_slots, "khoảng thời gian"))
+        if not combos:
+            return []
+        specs, builders = [], []
+        for i in range(n):
+            s = self.sampler.sample(tool, _TIER_MIX[i % len(_TIER_MIX)], i + 7000)
+            drop_slots, label = combos[i % len(combos)]
+            hints = dict(s["hints"])
+            if any(d in drop_slots for d in ("from_date", "to_date")):
+                hints.pop("_time", None)
+            for slot in drop_slots:
+                if slot not in ("from_date", "to_date"):
+                    hints.pop(slot, None)
+            actual_drop = [sl for sl in drop_slots if sl in s["arguments"]]
+            if not actual_drop:
+                continue
+            checker = {k: v for k, v in s["arguments"].items() if k not in drop_slots}
+            specs.append(self._spec(tool, hints) + f"  (KHÔNG nêu {label})")
+
+            def build(q, tool=tool, actual_drop=actual_drop, checker=checker, i=i):
+                return {
+                    "id": f"real_hard_missing_{tool['name']}_{i:04d}",
+                    "source": "real_tool_xlsx", "split": "eval_real_hard_missing",
+                    "scenario": "missing_multi_parameter", "scenario_family": "hard_missing",
+                    "instruction": q, "expected_action": "ask_clarification",
+                    "generator": "real_tool_llm",
+                    "missing_slots": actual_drop,
+                    "prediction": {"action": "ask_clarification", "asked_slots": actual_drop},
+                    "checker_call": {"tool_name": tool["name"], "arguments": checker},
+                    "checker_expected_status": "schema_invalid",
+                }
+            builders.append(build)
+        return self._batch_build(specs, builders)
+
+    # ---- Case: hard_parallel_implicit (no explicit 'cả hai' marker) ----
+    def gen_hard_parallel_implicit(self, pairs: list[tuple[dict, dict]], per_pair: int) -> list[dict]:
+        """Hard parallel: implicit multi-tool request without 'cả hai'/'đồng thời' marker."""
+        specs, builders = [], []
+        for pi, (a, b) in enumerate(pairs):
+            for i in range(per_pair):
+                tier = _TIER_MIX[i % len(_TIER_MIX)]
+                sa = self.sampler.sample(a, tier, i + 8000)
+                shared = {k: sa["arguments"][k] for k in ("location_code", "from_date", "to_date", "data_level") if k in sa["arguments"]}
+                sb = self.sampler.sample(b, tier, i + 9000)
+                for k, v in shared.items():
+                    if k in sb["arguments"]:
+                        sb["arguments"][k] = v
+                hints = {k: v for k, v in sa["hints"].items() if k.startswith("_") or k in ("location_code", "object_code")}
+                spec = (f"Chủ đề 1: {a['description'].split('.')[0][:60]}. "
+                        f"Chủ đề 2: {b['description'].split('.')[0][:60]}. "
+                        f"Viết câu hỏi về CẢ HAI mà KHÔNG dùng từ 'đồng thời', 'cả hai', 'cùng lúc'. "
+                        + self._spec(a, hints).split("Phải nêu:")[-1])
+                specs.append(spec)
+
+                def build(q, a=a, b=b, sa=sa, sb=sb, pi=pi, i=i):
+                    return {
+                        "id": f"real_hard_parallel_{pi}_{i:04d}",
+                        "source": "real_tool_xlsx", "split": "eval_real_hard_parallel",
+                        "scenario": "implicit_parallel", "scenario_family": "hard_parallel",
+                        "instruction": q, "expected_action": "call_functions",
+                        "generator": "real_tool_llm",
+                        "gold_calls": [{"tool_name": a["name"], "arguments": sa["arguments"]},
+                                       {"tool_name": b["name"], "arguments": sb["arguments"]}],
+                    }
+                builders.append(build)
+        return self._batch_build(specs, builders)
+
     # ---- Unseen eval from real expert seed examples ----
     def from_seed_examples(self, unseen_tools: list[dict]) -> list[dict]:
         out = []
