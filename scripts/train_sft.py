@@ -50,14 +50,20 @@ def main() -> None:
     if args.load_in_4bit:
         model = prepare_model_for_kbit_training(model)
 
-    peft_config = LoraConfig(
-        task_type=TaskType.CAUSAL_LM,
-        inference_mode=False,
-        r=args.lora_r,
-        lora_alpha=args.lora_alpha,
-        lora_dropout=args.lora_dropout,
-        target_modules=args.target_modules.split(","),
-    )
+    if args.adapter:
+        from peft import PeftModel
+        print(f"Resuming from adapter: {args.adapter}")
+        model = PeftModel.from_pretrained(model, args.adapter, is_trainable=True)
+        peft_config = None  # LoRA already applied
+    else:
+        peft_config = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            inference_mode=False,
+            r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            target_modules=args.target_modules.split(","),
+        )
 
     trainer = _build_trainer(
         SFTTrainer,
@@ -101,6 +107,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-train-samples", type=int)
     parser.add_argument("--max-eval-samples", type=int)
+    parser.add_argument("--adapter", default=None, help="Path to existing LoRA adapter to resume from.")
     parser.add_argument("--report-to", default="none")
     parser.add_argument("--load-in-4bit", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--bf16", action=argparse.BooleanOptionalAction, default=True)
@@ -200,9 +207,10 @@ def _build_trainer(
         "args": training_args,
         "train_dataset": train_dataset,
         "eval_dataset": eval_dataset,
-        "peft_config": peft_config,
         "processing_class": tokenizer,
     }
+    if peft_config is not None:
+        kwargs["peft_config"] = peft_config
     try:
         return trainer_cls(**kwargs)
     except TypeError:

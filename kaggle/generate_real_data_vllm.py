@@ -5,20 +5,19 @@ paraphrase) but the LLM backend is vLLM (fast batched CUDA generation). Gold arg
 are constructed from the closed catalogues (always valid); the model only writes a
 natural Vietnamese query per spec — ALL prompts are generated in ONE vLLM batch.
 
-Inputs (Kaggle Dataset dir): real_tools.json, real_reference_codes.json,
-real_station_catalogue.json.
-Outputs (/kaggle/working): sft_train_real.jsonl + eval_real_*.jsonl + report.
+Inputs: real_tools.json, real_reference_codes.json, real_station_catalogue.json.
+Outputs: sft_train_real.jsonl + eval_real_*.jsonl + report.
 
 Env vars:
   GEN_MODEL   HuggingFace model ID (default: Qwen/Qwen3-32B)
-  SCALE       raw generation multiplier for train families (default: 1.0)
+  SCALE       raw generation multiplier for train families (default: 2.0)
   EVAL_SCALE  multiplier for eval hold-out targets (default: 1.0)
-  BACKEND       vllm | transformers (default: transformers)
+  BACKEND       vllm | transformers (default: vllm)
   BATCH         batch size for transformers backend (default: 4)
   QUANTIZATION  vLLM quantization method: "bitsandbytes" for 4-bit on A100 40GB,
-                unset for fp16 on A100 80GB / H100 (default: unset)
-  DATA_DIR      path to input data (default: /kaggle/input/telco-real-tools)
-  OUT_DIR       output path (default: /kaggle/working)
+                unset for fp16/bf16 on 80GB+ GPU (default: unset)
+  DATA_DIR      path to input data (default: <project>/data)
+  OUT_DIR       output path (default: /workspace/generated_data)
 """
 
 from __future__ import annotations
@@ -31,21 +30,37 @@ import re
 from collections import Counter
 from pathlib import Path
 
-DATA = Path(os.environ.get("DATA_DIR", "/kaggle/input/telco-real-tools"))
-OUT = Path(os.environ.get("OUT_DIR", "/kaggle/working"))
+_ROOT = Path(__file__).resolve().parents[1]
+DATA = Path(os.environ.get("DATA_DIR", str(_ROOT / "data")))
+OUT = Path(os.environ.get("OUT_DIR", "/workspace/generated_data"))
 MODEL = os.environ.get("GEN_MODEL", "Qwen/Qwen3-32B")
-SCALE = float(os.environ.get("SCALE", "1.0"))
+SCALE = float(os.environ.get("SCALE", "2.0"))
 EVAL_SCALE = float(os.environ.get("EVAL_SCALE", "1.0"))
-# QUANTIZATION: "bitsandbytes" for 4-bit (A100 40GB), None for fp16 (A100 80GB / H100).
+# QUANTIZATION: "bitsandbytes" for 4-bit (A100 40GB), unset for fp16 on 80GB+ GPU.
 QUANTIZATION = os.environ.get("QUANTIZATION", None) or None
 
 STEP1_REF = "<from_step_1>"
 TIER_MIX = ["simple", "simple", "simple", "medium", "medium", "medium", "medium", "complex", "complex", "complex"]
 
 # Volume targets at scale=1.0 (before rule verify). Over-generated ~1.25x.
-TARGET = dict(seen_single=90, unseen_single=26, missing=90, parallel_per_pair=110, multi_per_chain=300, abstain=980,
-              eval_seen=250, eval_unseen=150, eval_missing=240, eval_multi=155, eval_parallel=80, eval_abstain=155,
-              mask_train=350, mask_eval_seen=110, mask_eval_unseen=60)
+# Tuned from M1 results: boost multi_step (0.576) and parallel (0.836); trim abstain/missing (1.000).
+TARGET = dict(
+    seen_single=150,
+    unseen_single=50,
+    missing=120,
+    parallel_per_pair=350,
+    multi_per_chain=800,
+    abstain=600,
+    eval_seen=350,
+    eval_unseen=250,
+    eval_missing=350,
+    eval_multi=250,
+    eval_parallel=150,
+    eval_abstain=250,
+    mask_train=600,
+    mask_eval_seen=200,
+    mask_eval_unseen=100,
+)
 
 # Parallel pairs: both tools share location+time context (or kpi_code for thong_ke/nguong).
 PARALLEL_PAIRS = [
@@ -402,18 +417,25 @@ def main():
                                            tokenize=False, add_generation_prompt=True)
 
     prompts = [templ(j["system"], j["user"]) for j in jobs]
-    backend = os.environ.get("BACKEND", "transformers").lower()
+    backend = os.environ.get("BACKEND", "vllm").lower()
     print(f"Backend: {backend} | model: {MODEL} | generating {len(prompts)} queries ...", flush=True)
 
     if backend == "vllm":
         from vllm import LLM, SamplingParams
-        _llm_kwargs: dict = dict(model=MODEL, max_model_len=8192, gpu_memory_utilization=0.90, trust_remote_code=True)
+        _llm_kwargs: dict = dict(
+            model=MODEL,
+            max_model_len=4096,           # prompts are short; saves KV cache memory
+            gpu_memory_utilization=0.88,  # ~85GB on 97GB GPU; leave room for OS/other
+            trust_remote_code=True,
+            enable_prefix_caching=True,   # cache repeated system-prompt prefix across batch
+            tensor_parallel_size=1,
+        )
         if QUANTIZATION:
             _llm_kwargs["quantization"] = QUANTIZATION
         else:
-            _llm_kwargs["dtype"] = "half"
+            _llm_kwargs["dtype"] = "bfloat16"  # bf16 stable on Blackwell
         llm = LLM(**_llm_kwargs)
-        outs = llm.generate(prompts, SamplingParams(temperature=0.85, max_tokens=90, stop=["\n\n"]))
+        outs = llm.generate(prompts, SamplingParams(temperature=0.85, max_tokens=120, stop=["\n\n"]))
         texts = [o.outputs[0].text for o in outs]
     else:  # transformers — robust on Kaggle (no runtime compilation)
         import torch

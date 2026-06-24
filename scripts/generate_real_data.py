@@ -42,10 +42,10 @@ MULTI_STEP_CHAINS = [
 
 # Per-unit generation counts at scale=1.0 (before verify/split). Over-generated to
 # absorb verification drops; final ≈ train 2500 / test 1200.
-DEFAULTS = dict(seen_single=90, unseen_single=26, missing=90, multi_per_chain=300,
-                parallel_per_pair=110, abstain=980,
-                eval_seen=250, eval_unseen=150, eval_missing=240, eval_multi=155,
-                eval_parallel=80, eval_abstain=155, mask_train=350, mask_eval_seen=110, mask_eval_unseen=60)
+DEFAULTS = dict(seen_single=150, unseen_single=50, missing=120, multi_per_chain=800,
+                parallel_per_pair=350, abstain=600,
+                eval_seen=350, eval_unseen=250, eval_missing=350, eval_multi=250,
+                eval_parallel=150, eval_abstain=250, mask_train=600, mask_eval_seen=200, mask_eval_unseen=100)
 
 
 def _write(path, rows):
