@@ -82,3 +82,6 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+
+notebooks/*.ipynb
+telco_vpd/
