@@ -19,16 +19,21 @@ pip install -q transformers peft accelerate datasets huggingface-hub trl bitsand
 # Create dirs
 mkdir -p "$MODEL_DIR" "$DATA_DIR" "$ADAPTER_DIR" "$REPORTS_DIR" "$LOGS_DIR"
 
-# Use Python snapshot_download (no symlinks — hf CLI may create symlinks PEFT can't resolve)
+# Download via HF cache then shutil.copytree — avoids symlink issues with PEFT
 _hf_download() {
     # _hf_download <repo_id> <repo_type> <local_dir>
     python3 - "$1" "$2" "$3" <<'PYEOF'
-import sys
+import sys, os, shutil
 from huggingface_hub import snapshot_download
 repo_id, repo_type, local_dir = sys.argv[1], sys.argv[2], sys.argv[3]
-snapshot_download(repo_id, repo_type=repo_type, local_dir=local_dir,
-                  local_dir_use_symlinks=False,
-                  ignore_patterns=["*.msgpack","*.h5","flax_model*","tf_model*","rust_model*"])
+kwargs = {}
+if repo_type != "model":
+    kwargs["repo_type"] = repo_type
+cache = snapshot_download(repo_id, **kwargs,
+                          ignore_patterns=["*.msgpack","*.h5","flax_model*","tf_model*","rust_model*"])
+if os.path.exists(local_dir):
+    shutil.rmtree(local_dir)
+shutil.copytree(cache, local_dir)
 print(f"  → {local_dir}")
 PYEOF
 }
