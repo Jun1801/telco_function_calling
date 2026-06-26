@@ -19,17 +19,31 @@ pip install -q transformers peft accelerate datasets huggingface-hub trl bitsand
 # Create dirs
 mkdir -p "$MODEL_DIR" "$DATA_DIR" "$ADAPTER_DIR" "$REPORTS_DIR" "$LOGS_DIR"
 
+# Use Python snapshot_download (no symlinks — hf CLI may create symlinks PEFT can't resolve)
+_hf_download() {
+    # _hf_download <repo_id> <repo_type> <local_dir>
+    python3 - "$1" "$2" "$3" <<'PYEOF'
+import sys
+from huggingface_hub import snapshot_download
+repo_id, repo_type, local_dir = sys.argv[1], sys.argv[2], sys.argv[3]
+snapshot_download(repo_id, repo_type=repo_type, local_dir=local_dir,
+                  local_dir_use_symlinks=False,
+                  ignore_patterns=["*.msgpack","*.h5","flax_model*","tf_model*","rust_model*"])
+print(f"  → {local_dir}")
+PYEOF
+}
+
 # Download base model
 echo "Downloading Qwen3-4B..."
-hf download Qwen/Qwen3-4B --local-dir "$MODEL_DIR"
+_hf_download Qwen/Qwen3-4B model "$MODEL_DIR"
 
 # Download dataset
 echo "Downloading dataset..."
-hf download Jun1801/telco-fc-dataset --repo-type dataset --local-dir "$DATA_DIR/dataset"
+_hf_download Jun1801/telco-fc-dataset dataset "$DATA_DIR/dataset"
 
 # Download rollout data
 echo "Downloading rollout data..."
-hf download Jun1801/data_rollout --repo-type dataset --local-dir "$DATA_DIR/rollout"
+_hf_download Jun1801/data_rollout dataset "$DATA_DIR/rollout"
 
 # Populate data/ dir expected by run_baseline.py
 echo "Populating data/ directory..."
@@ -53,10 +67,10 @@ done
 
 # Download adapters
 echo "Downloading adapters..."
-hf download Jun1801/telco-fc-m1b-qwen3-4b --repo-type model --local-dir "$ADAPTER_DIR/m1"
-hf download Jun1801/telco-fc-m2b-qwen3-4b --repo-type model --local-dir "$ADAPTER_DIR/m2"
-hf download Jun1801/telco-fc-m3b-qwen3-4b --repo-type model --local-dir "$ADAPTER_DIR/m3"
-hf download Jun1801/telco-fc-m3b-test      --repo-type model --local-dir "$ADAPTER_DIR/m3-test"
+_hf_download Jun1801/telco-fc-m1b-qwen3-4b model "$ADAPTER_DIR/m1"
+_hf_download Jun1801/telco-fc-m2b-qwen3-4b model "$ADAPTER_DIR/m2"
+_hf_download Jun1801/telco-fc-m3b-qwen3-4b model "$ADAPTER_DIR/m3"
+_hf_download Jun1801/telco-fc-m3b-test      model "$ADAPTER_DIR/m3-test"
 
 echo ""
 echo "=== Setup complete ==="
