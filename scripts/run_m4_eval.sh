@@ -1,18 +1,26 @@
 #!/usr/bin/env bash
+# Eval M4 adapter (SDPO) on real v2 eval set.
+# Usage: bash scripts/run_m4_eval.sh [workspace_dir]
 set -euo pipefail
-cd "$(dirname "$0")/.."
-source /venv/main/bin/activate
-[ -f /workspace/.env ] && source /workspace/.env
+WORKSPACE="${1:-$(pwd)}"
+cd "$WORKSPACE"
 
-echo "=== M4b: Eval with SDPO adapter (real splits) ==="
+MODEL="${MODEL:-/content/models/Qwen3-4B}"
+ADAPTER="${ADAPTER:-/content/outputs/m4}"
+REPORTS_DIR="${REPORTS_DIR:-/content/reports}"
+
+mkdir -p "$REPORTS_DIR" logs
+
+echo "=== M4 Eval (SDPO) ==="
 python scripts/run_baseline.py \
   --backend transformers \
-  --model /workspace/models/Qwen3-4B \
-  --adapter outputs/sft/m4b_qwen3-4b \
-  --splits real --no-load-in-4bit \
+  --model "$MODEL" \
+  --adapter "$ADAPTER" \
+  --splits real \
+  --no-load-in-4bit \
   --max-new-tokens 512 \
-  --output reports/m4b_results.jsonl \
-  --error-report reports/m4b_error_report.md \
-  2>&1 | tee logs/m4b_eval.log
+  --output "$REPORTS_DIR/m4b_results_v2.jsonl" \
+  --error-report "$REPORTS_DIR/m4b_error_report_v2.md" \
+  2>&1 | tee logs/m4_eval.log
 
-echo "=== M4b eval done. Results: reports/m4b_error_report.md ==="
+echo "Results: $REPORTS_DIR/m4b_results_v2.jsonl"

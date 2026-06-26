@@ -1,24 +1,48 @@
 #!/usr/bin/env bash
+# Train M4 (SDPO) starting from M3 adapter.
+# Usage: bash scripts/run_m4_train.sh [workspace_dir]
+# Env overrides: MODEL, TEACHER_ADAPTER, ROLLOUTS, OUTPUT_DIR, EPOCHS, LR
 set -euo pipefail
-cd "$(dirname "$0")/.."
-source /venv/main/bin/activate
-[ -f /workspace/.env ] && source /workspace/.env
-export WANDB_API_KEY
-export WANDB_PROJECT="telco-fc"
-export WANDB_RUN_NAME="m4-sdpo-qwen3-4b"
+WORKSPACE="${1:-$(pwd)}"
+cd "$WORKSPACE"
 
-echo "=== M4: SDPO distillation (top-k JSD, teacher=M1b, student=M1b) ==="
+MODEL="${MODEL:-/content/models/Qwen3-4B}"
+TEACHER_ADAPTER="${TEACHER_ADAPTER:-/content/adapters/m3}"
+STUDENT_RESUME="${STUDENT_RESUME:-$TEACHER_ADAPTER}"
+ROLLOUTS="${ROLLOUTS:-/content/data/rollout/sdpo_rollouts_m4.jsonl}"
+OUTPUT_DIR="${OUTPUT_DIR:-/content/outputs/m4}"
+REPORTS_DIR="${REPORTS_DIR:-/content/reports}"
+EPOCHS="${EPOCHS:-3}"
+LR="${LR:-5e-6}"
+
+mkdir -p "$OUTPUT_DIR" logs
+
+echo "=== M4 Train (SDPO) ==="
+echo "  Model          : $MODEL"
+echo "  Teacher adapter: $TEACHER_ADAPTER"
+echo "  Student start  : $STUDENT_RESUME"
+echo "  Rollouts       : $ROLLOUTS"
+echo "  Output         : $OUTPUT_DIR"
+echo "  Epochs         : $EPOCHS  LR: $LR"
+echo ""
+
 python src/training/train_sdpo_hf.py \
-  --rollouts data/sdpo_rollouts_m4.jsonl \
-  --model /workspace/models/Qwen3-4B \
-  --teacher-adapter outputs/sft/m1b_qwen3-4b \
-  --student-resume outputs/sft/m1b_qwen3-4b \
-  --output-dir outputs/sft/m4b_qwen3-4b \
-  --top-k 20 --alpha 0.5 --is-clip 2.0 \
-  --learning-rate 5e-6 --epochs 3 \
-  --batch-size 4 --grad-accum-steps 4 \
-  --bf16 --no-load-in-4bit \
-  --report-to all \
-  2>&1 | tee logs/m4b_train.log
+  --model "$MODEL" \
+  --teacher-adapter "$TEACHER_ADAPTER" \
+  --student-resume  "$STUDENT_RESUME" \
+  --rollouts "$ROLLOUTS" \
+  --output-dir "$OUTPUT_DIR" \
+  --top-k 20 \
+  --alpha 0.5 \
+  --is-clip 2.0 \
+  --success-threshold 1.0 \
+  --learning-rate "$LR" \
+  --epochs "$EPOCHS" \
+  --grad-accum-steps 4 \
+  --bf16 \
+  --no-load-in-4bit \
+  --report-to none \
+  2>&1 | tee logs/m4_train.log
 
-echo "=== M4b training done. Adapter: outputs/sft/m4b_qwen3-4b/ ==="
+echo ""
+echo "M4 adapter saved to: $OUTPUT_DIR"

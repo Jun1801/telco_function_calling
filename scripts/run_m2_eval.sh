@@ -1,18 +1,32 @@
 #!/usr/bin/env bash
+# Eval M2 adapter (masking SFT) on real v2 eval set.
+# Usage: bash scripts/run_m2_eval.sh [workspace_dir]
 set -euo pipefail
-cd "$(dirname "$0")/.."
-source /venv/main/bin/activate
-[ -f /workspace/.env ] && source /workspace/.env
+WORKSPACE="${1:-$(pwd)}"
+cd "$WORKSPACE"
 
-echo "=== M2b: Eval with masking-curriculum adapter (real splits) ==="
+MODEL="${MODEL:-/content/models/Qwen3-4B}"
+ADAPTER="${ADAPTER:-/content/adapters/m2}"
+DATA_DIR="${DATA_DIR:-/content/data}"
+REPORTS_DIR="${REPORTS_DIR:-/content/reports}"
+
+mkdir -p "$REPORTS_DIR" logs
+
+echo "=== M2 Eval (masking SFT) ==="
+echo "  Model   : $MODEL"
+echo "  Adapter : $ADAPTER"
+echo ""
+
 python scripts/run_baseline.py \
   --backend transformers \
-  --model /workspace/models/Qwen3-4B \
-  --adapter outputs/sft/m2b_qwen3-4b \
-  --splits real --no-load-in-4bit \
+  --model "$MODEL" \
+  --adapter "$ADAPTER" \
+  --splits real \
+  --no-load-in-4bit \
   --max-new-tokens 512 \
-  --output reports/m2b_results.jsonl \
-  --error-report reports/m2b_error_report.md \
-  2>&1 | tee logs/m2b_eval.log
+  --output "$REPORTS_DIR/m2b_results_v2.jsonl" \
+  --error-report "$REPORTS_DIR/m2b_error_report_v2.md" \
+  2>&1 | tee logs/m2_eval.log
 
-echo "=== M2b eval done. Results: reports/m2b_error_report.md ==="
+echo ""
+echo "Results: $REPORTS_DIR/m2b_results_v2.jsonl"

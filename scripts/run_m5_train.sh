@@ -1,22 +1,36 @@
 #!/usr/bin/env bash
+# Train M5 (VPD-lite) starting from M3 adapter.
+# Usage: bash scripts/run_m5_train.sh [workspace_dir]
+# Env overrides: MODEL, ADAPTER, ROLLOUTS, OUTPUT_DIR
 set -euo pipefail
-cd "$(dirname "$0")/.."
-source /venv/main/bin/activate
-[ -f /workspace/.env ] && source /workspace/.env
-export WANDB_API_KEY
-export WANDB_PROJECT="telco-fc"
-export WANDB_RUN_NAME="m5-vpd-lite-qwen3-4b"
+WORKSPACE="${1:-$(pwd)}"
+cd "$WORKSPACE"
 
-# M5 reuses the same rollouts as M4 (generate once with run_m4_rollouts.sh).
-echo "=== M5: VPD-lite (EM loop: E-step teacher + M-step student distillation) ==="
+MODEL="${MODEL:-/content/models/Qwen3-4B}"
+ADAPTER="${ADAPTER:-/content/adapters/m3}"
+ROLLOUTS="${ROLLOUTS:-/content/data/rollout/sdpo_rollouts_m4.jsonl}"
+OUTPUT_DIR="${OUTPUT_DIR:-/content/outputs/m5}"
+REPORTS_DIR="${REPORTS_DIR:-/content/reports}"
+
+mkdir -p "$OUTPUT_DIR" logs
+
+# Update vpd.yaml teacher/student paths to point to adapter
+# (done via env vars passed to train_vpd_hf.py, which reads --adapter)
+echo "=== M5 Train (VPD-lite) ==="
+echo "  Model   : $MODEL"
+echo "  Adapter : $ADAPTER  (teacher + student start)"
+echo "  Rollouts: $ROLLOUTS"
+echo "  Output  : $OUTPUT_DIR"
+echo ""
+
 python scripts/train_vpd_hf.py \
+  --model "$MODEL" \
+  --adapter "$ADAPTER" \
+  --rollouts "$ROLLOUTS" \
+  --output-dir "$OUTPUT_DIR" \
   --config configs/vpd.yaml \
-  --model /workspace/models/Qwen3-4B \
-  --adapter outputs/sft/m1b_qwen3-4b \
-  --rollouts data/sdpo_rollouts_m4.jsonl \
-  --eval-file data/sft_eval_real_messages.jsonl \
-  --output-dir outputs/sft/m5b_qwen3-4b \
-  --report-to all \
-  2>&1 | tee logs/m5b_train.log
+  --report-to none \
+  2>&1 | tee logs/m5_train.log
 
-echo "=== M5b training done. Adapter: outputs/sft/m5b_qwen3-4b/ ==="
+echo ""
+echo "M5 adapter saved to: $OUTPUT_DIR"

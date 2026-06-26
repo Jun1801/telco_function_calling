@@ -1,18 +1,26 @@
 #!/usr/bin/env bash
+# Eval M5 adapter (VPD-lite) on real v2 eval set.
+# Usage: bash scripts/run_m5_eval.sh [workspace_dir]
 set -euo pipefail
-cd "$(dirname "$0")/.."
-source /venv/main/bin/activate
-[ -f /workspace/.env ] && source /workspace/.env
+WORKSPACE="${1:-$(pwd)}"
+cd "$WORKSPACE"
 
-echo "=== M5b: Eval with VPD-lite adapter (real splits) ==="
+MODEL="${MODEL:-/content/models/Qwen3-4B}"
+ADAPTER="${ADAPTER:-/content/outputs/m5}"
+REPORTS_DIR="${REPORTS_DIR:-/content/reports}"
+
+mkdir -p "$REPORTS_DIR" logs
+
+echo "=== M5 Eval (VPD-lite) ==="
 python scripts/run_baseline.py \
   --backend transformers \
-  --model /workspace/models/Qwen3-4B \
-  --adapter outputs/sft/m5b_qwen3-4b \
-  --splits real --no-load-in-4bit \
+  --model "$MODEL" \
+  --adapter "$ADAPTER" \
+  --splits real \
+  --no-load-in-4bit \
   --max-new-tokens 512 \
-  --output reports/m5b_results.jsonl \
-  --error-report reports/m5b_error_report.md \
-  2>&1 | tee logs/m5b_eval.log
+  --output "$REPORTS_DIR/m5b_results_v2.jsonl" \
+  --error-report "$REPORTS_DIR/m5b_error_report_v2.md" \
+  2>&1 | tee logs/m5_eval.log
 
-echo "=== M5b eval done. Results: reports/m5b_error_report.md ==="
+echo "Results: $REPORTS_DIR/m5b_results_v2.jsonl"
