@@ -42,15 +42,13 @@ cp "$DATA_DIR/dataset/schemas/real_reference_codes.json" "$REPO_DATA/real_refere
 cp "$DATA_DIR/dataset/schemas/real_station_catalogue.json" "$REPO_DATA/real_station_catalogue.json" 2>/dev/null || true
 
 # Eval splits: rename eval/<name>.jsonl → eval_real_<name>.jsonl
+# NOTE: the HF dataset eval/ files already include hard splits merged in
+# (seen.jsonl = standard_seen + hard_seen, etc.) — do NOT also copy
+# rollout/hard_eval_outputs/ or hard samples will be counted twice.
 for split in seen unseen masked missing_slot multi_step parallel abstain; do
     src="$DATA_DIR/dataset/eval/$split.jsonl"
     dst="$REPO_DATA/eval_real_$split.jsonl"
-    [ -f "$src" ] && cp "$src" "$dst" && echo "  copied eval_real_$split.jsonl"
-done
-
-# Hard eval splits from rollout
-for f in "$DATA_DIR/rollout/hard_eval_outputs/eval_real_hard_"*.jsonl; do
-    [ -f "$f" ] && cp "$f" "$REPO_DATA/" && echo "  copied $(basename $f)"
+    [ -f "$src" ] && cp "$src" "$dst" && echo "  copied eval_real_$split.jsonl ($(wc -l < $dst) samples)"
 done
 
 # Download adapters
