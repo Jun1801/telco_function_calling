@@ -39,8 +39,11 @@ def main() -> None:
     data_dir = ROOT / "data"
     report_path = Path(args.output)
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    tool_registry = ToolRegistry.from_file(data_dir / "tools.json")
-    contract_registry = ContractRegistry.from_file(data_dir / "tool_contracts.json")
+    # Synthetic registries only needed for synthetic splits; skip if files absent (e.g. real-only Colab run)
+    _tools_path = data_dir / "tools.json"
+    _contracts_path = data_dir / "tool_contracts.json"
+    tool_registry = ToolRegistry.from_file(_tools_path) if _tools_path.exists() else ToolRegistry([])
+    contract_registry = ContractRegistry.from_file(_contracts_path) if _contracts_path.exists() else ContractRegistry([])
     real_assets = load_real_assets(data_dir)
     generator = _build_generator(args)
 
