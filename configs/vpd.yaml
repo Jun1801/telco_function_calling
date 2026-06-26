@@ -35,12 +35,12 @@ m_steps_per_cycle: 3        # M-steps per cycle (1 E : 3 M)
 epochs: 3
 
 # E-step (teacher update)
-learning_rate_e: 1e-5
+learning_rate_e: 1.0e-5
 teacher_trust_region_beta: 0.02    # KL(teacher || student) penalty coefficient
 neg_loss_weight: 0.5               # weight for negative trajectory loss
 
 # M-step (student distillation)
-learning_rate_m: 5e-6
+learning_rate_m: 5.0e-6
 distillation_top_k: 20
 distillation_alpha: 0.5     # JSD: 0.5=symmetric, 0=fwd-KL, 1=rev-KL
 is_clip: 2.0                # importance sampling clip

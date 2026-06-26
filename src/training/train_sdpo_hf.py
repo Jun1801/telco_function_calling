@@ -214,18 +214,54 @@ def compute_jsd_loss(
     return jsd_per_token.mean()
 
 
+def _wandb_init(args: argparse.Namespace) -> None:
+    if args.report_to != "wandb":
+        return
+    try:
+        import wandb
+        wandb.init(
+            project="telco-fc",
+            name="m4-sdpo",
+            config={
+                "model": args.model,
+                "teacher_adapter": args.teacher_adapter,
+                "top_k": args.top_k,
+                "alpha": args.alpha,
+                "is_clip": args.is_clip,
+                "learning_rate": args.learning_rate,
+                "epochs": args.epochs,
+                "grad_accum_steps": args.grad_accum_steps,
+                "success_threshold": args.success_threshold,
+            },
+        )
+    except ImportError:
+        print("wandb not installed — skipping logging", flush=True)
+
+
+def _wlog(metrics: dict, step: int | None = None) -> None:
+    try:
+        import wandb
+        if wandb.run is not None:
+            wandb.log(metrics, step=step)
+    except ImportError:
+        pass
+
+
 def train_sdpo(
     dataset: list[dict],
     model: Any,
     tokenizer: Any,
     args: argparse.Namespace,
     output_dir: Path,
+    anchor_data: list[dict] | None = None,
 ) -> None:
+    import random
     import torch
     from torch.optim import AdamW
 
     output_dir.mkdir(parents=True, exist_ok=True)
     dev = next(model.parameters()).device
+    anchor_data = anchor_data or []
 
     optimizer = AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
@@ -264,10 +300,18 @@ def train_sdpo(
             epoch_loss += loss.item() * grad_accum_steps
 
             if (batch_idx + 1) % grad_accum_steps == 0:
+                # Anchor SFT loss on abstain sample — added before optimizer step
+                # to prevent catastrophic forgetting of abstain capability
+                if anchor_data:
+                    anchor = random.choice(anchor_data)
+                    a_loss = _compute_sft_nll(model, tokenizer, anchor, dev)
+                    (args.anchor_weight * a_loss / grad_accum_steps).backward()
+
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
                 optimizer.zero_grad()
                 global_step += 1
+                _wlog({"train/loss": loss.item() * grad_accum_steps}, step=global_step)
 
             if (batch_idx + 1) % 20 == 0:
                 print(
@@ -278,6 +322,7 @@ def train_sdpo(
 
         avg_loss = epoch_loss / max(len(dataset), 1)
         print(f"Epoch {epoch+1}/{args.epochs}  avg_loss={avg_loss:.4f}")
+        _wlog({"train/epoch_avg_loss": avg_loss, "epoch": epoch + 1})
         _save_adapter(model, output_dir)
 
     print(f"\nAdapter saved → {output_dir}")
@@ -286,6 +331,72 @@ def train_sdpo(
 def _save_adapter(model: Any, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(str(output_dir))
+
+
+def _load_anchor_samples(anchor_file: str, data_dir: Path) -> list[dict]:
+    path = Path(anchor_file)
+    if not path.exists():
+        print(f"Anchor file not found: {path} — skipping anchor loss", flush=True)
+        return []
+
+    try:
+        from src.evaluation.routing import build_sample_prompt, load_real_assets
+        from src.registry.contract_registry import ContractRegistry
+        from src.registry.tool_registry import ToolRegistry
+        real_assets = load_real_assets(data_dir)
+        tool_registry = ToolRegistry([])
+        contract_registry = ContractRegistry([])
+    except Exception as exc:
+        print(f"Could not load real_assets for anchor: {exc} — skipping", flush=True)
+        return []
+
+    samples = [json.loads(l) for l in path.open(encoding="utf-8") if l.strip()]
+    abstain = [s for s in samples if s.get("expected_action") == "abstain"]
+
+    anchor_data: list[dict] = []
+    for s in abstain:
+        try:
+            messages = build_sample_prompt(s, tool_registry, contract_registry, real_assets)
+            pred = s.get("prediction", {})
+            gold = (
+                json.dumps(pred, ensure_ascii=False)
+                if isinstance(pred, dict) and pred.get("action") == "abstain"
+                else json.dumps({"action": "abstain", "reason": "ngoài phạm vi công cụ KPI"}, ensure_ascii=False)
+            )
+            anchor_data.append({"messages": messages, "gold": gold})
+        except Exception:
+            continue
+
+    print(f"Loaded {len(anchor_data)} anchor abstain samples from {path}", flush=True)
+    return anchor_data
+
+
+def _compute_sft_nll(model: Any, tokenizer: Any, anchor: dict, dev: Any) -> Any:
+    import torch
+    import torch.nn.functional as F
+
+    try:
+        text = tokenizer.apply_chat_template(
+            anchor["messages"], tokenize=False, add_generation_prompt=True, enable_thinking=False
+        )
+    except TypeError:
+        text = tokenizer.apply_chat_template(
+            anchor["messages"], tokenize=False, add_generation_prompt=True
+        )
+
+    eos = tokenizer.eos_token or ""
+    gold_text = anchor["gold"] + eos
+
+    prompt_ids = tokenizer(text, return_tensors="pt")["input_ids"][0]
+    gold_ids = tokenizer(gold_text, add_special_tokens=False, return_tensors="pt")["input_ids"][0]
+    if len(gold_ids) == 0:
+        return torch.tensor(0.0, device=dev)
+
+    full_ids = torch.cat([prompt_ids, gold_ids]).unsqueeze(0).to(dev)
+    out = model(full_ids)
+    resp_start = len(prompt_ids) - 1
+    resp_logits = out.logits[0][resp_start: resp_start + len(gold_ids)]
+    return F.cross_entropy(resp_logits, gold_ids.to(dev))
 
 
 def main() -> None:
@@ -301,6 +412,8 @@ def main() -> None:
 
     records = [json.loads(l) for l in rollout_path.open(encoding="utf-8") if l.strip()]
     print(f"Loaded {len(records)} rollout groups from {rollout_path}")
+
+    _wandb_init(args)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     if tokenizer.pad_token is None:
@@ -340,6 +453,11 @@ def main() -> None:
     if not sdpo_dataset:
         raise SystemExit("No SDPO training samples — check rollouts and success_threshold.")
 
+    # Load abstain anchor samples for anti-forgetting regularization
+    anchor_data: list[dict] = []
+    if args.anchor_file:
+        anchor_data = _load_anchor_samples(args.anchor_file, ROOT / "data")
+
     # -----------------------------------------------------------------------
     # Phase B: train student
     # -----------------------------------------------------------------------
@@ -349,7 +467,7 @@ def main() -> None:
     )
     student = PeftModel.from_pretrained(base, args.student_resume, is_trainable=True)
 
-    train_sdpo(sdpo_dataset, student, tokenizer, args, Path(args.output_dir))
+    train_sdpo(sdpo_dataset, student, tokenizer, args, Path(args.output_dir), anchor_data=anchor_data)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -371,6 +489,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--bf16", action="store_true")
     p.add_argument("--no-load-in-4bit", action="store_true")
     p.add_argument("--report-to", default="none")
+    p.add_argument("--anchor-file", default=None, help="Path to train file with abstain samples for anchor SFT loss")
+    p.add_argument("--anchor-weight", type=float, default=0.2, help="Weight for anchor SFT loss (default 0.2)")
     return p.parse_args()
 
 

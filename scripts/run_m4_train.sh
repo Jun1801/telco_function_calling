@@ -7,13 +7,14 @@ WORKSPACE="${1:-$(pwd)}"
 cd "$WORKSPACE"
 
 MODEL="${MODEL:-/content/models/Qwen3-4B}"
-TEACHER_ADAPTER="${TEACHER_ADAPTER:-/content/adapters/m3}"
+TEACHER_ADAPTER="${TEACHER_ADAPTER:-/content/adapters/m1}"
 STUDENT_RESUME="${STUDENT_RESUME:-$TEACHER_ADAPTER}"
 ROLLOUTS="${ROLLOUTS:-/content/data/rollout/sdpo_rollouts_m4.jsonl}"
 OUTPUT_DIR="${OUTPUT_DIR:-/content/outputs/m4}"
 REPORTS_DIR="${REPORTS_DIR:-/content/reports}"
 EPOCHS="${EPOCHS:-3}"
 LR="${LR:-5e-6}"
+ANCHOR_FILE="${ANCHOR_FILE:-/content/data/dataset/train/real_only.jsonl}"
 
 mkdir -p "$OUTPUT_DIR" logs
 
@@ -24,6 +25,7 @@ echo "  Student start  : $STUDENT_RESUME"
 echo "  Rollouts       : $ROLLOUTS"
 echo "  Output         : $OUTPUT_DIR"
 echo "  Epochs         : $EPOCHS  LR: $LR"
+echo "  Anchor file    : $ANCHOR_FILE"
 echo ""
 
 python src/training/train_sdpo_hf.py \
@@ -41,7 +43,9 @@ python src/training/train_sdpo_hf.py \
   --grad-accum-steps 4 \
   --bf16 \
   --no-load-in-4bit \
-  --report-to none \
+  --anchor-file "$ANCHOR_FILE" \
+  --anchor-weight 0.2 \
+  --report-to "${REPORT_TO:-wandb}" \
   2>&1 | tee logs/m4_train.log
 
 echo ""

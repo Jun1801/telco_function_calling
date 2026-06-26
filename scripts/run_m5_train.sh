@@ -7,20 +7,22 @@ WORKSPACE="${1:-$(pwd)}"
 cd "$WORKSPACE"
 
 MODEL="${MODEL:-/content/models/Qwen3-4B}"
-ADAPTER="${ADAPTER:-/content/adapters/m3}"
+ADAPTER="${ADAPTER:-/content/adapters/m1}"
 ROLLOUTS="${ROLLOUTS:-/content/data/rollout/sdpo_rollouts_m4.jsonl}"
 OUTPUT_DIR="${OUTPUT_DIR:-/content/outputs/m5}"
 REPORTS_DIR="${REPORTS_DIR:-/content/reports}"
+ANCHOR_FILE="${ANCHOR_FILE:-/content/data/dataset/train/real_only.jsonl}"
 
 mkdir -p "$OUTPUT_DIR" logs
 
 # Update vpd.yaml teacher/student paths to point to adapter
 # (done via env vars passed to train_vpd_hf.py, which reads --adapter)
 echo "=== M5 Train (VPD-lite) ==="
-echo "  Model   : $MODEL"
-echo "  Adapter : $ADAPTER  (teacher + student start)"
-echo "  Rollouts: $ROLLOUTS"
-echo "  Output  : $OUTPUT_DIR"
+echo "  Model       : $MODEL"
+echo "  Adapter     : $ADAPTER  (teacher + student start)"
+echo "  Rollouts    : $ROLLOUTS"
+echo "  Output      : $OUTPUT_DIR"
+echo "  Anchor file : $ANCHOR_FILE"
 echo ""
 
 python scripts/train_vpd_hf.py \
@@ -29,7 +31,9 @@ python scripts/train_vpd_hf.py \
   --rollouts "$ROLLOUTS" \
   --output-dir "$OUTPUT_DIR" \
   --config configs/vpd.yaml \
-  --report-to none \
+  --anchor-file "$ANCHOR_FILE" \
+  --anchor-weight 0.2 \
+  --report-to "${REPORT_TO:-wandb}" \
   2>&1 | tee logs/m5_train.log
 
 echo ""

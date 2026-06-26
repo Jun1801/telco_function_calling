@@ -221,14 +221,18 @@ def m_step(
     top_k: int,
     alpha: float,
     is_clip: float,
+    anchor_data: list[dict] | None = None,
+    anchor_weight: float = 0.2,
 ) -> float:
     """Distill teacher→student (top-k JSD with IS correction)."""
+    import random
     import torch
     import torch.nn.functional as F
 
     dev = next(student_model.parameters()).device
     total_loss = 0.0
     n = 0
+    anchor_data = anchor_data or []
 
     student_model.train()
     teacher_model.eval()
@@ -303,16 +307,126 @@ def m_step(
         n += 1
 
         if (step_idx + 1) % cfg.grad_accum_steps == 0:
+            if anchor_data:
+                anchor = random.choice(anchor_data)
+                a_loss = _compute_sft_nll(student_model, tokenizer, anchor, dev)
+                (anchor_weight * a_loss / cfg.grad_accum_steps).backward()
+
             torch.nn.utils.clip_grad_norm_(student_model.parameters(), 1.0)
             opt_student.step()
             opt_student.zero_grad()
 
     if n > 0:
+        if anchor_data:
+            anchor = random.choice(anchor_data)
+            a_loss = _compute_sft_nll(student_model, tokenizer, anchor, dev)
+            (anchor_weight * a_loss / max(cfg.grad_accum_steps, 1)).backward()
+
         torch.nn.utils.clip_grad_norm_(student_model.parameters(), 1.0)
         opt_student.step()
         opt_student.zero_grad()
 
     return total_loss / max(n, 1)
+
+
+def _load_anchor_samples(anchor_file: str, data_dir: Path) -> list[dict]:
+    path = Path(anchor_file)
+    if not path.exists():
+        print(f"Anchor file not found: {path} — skipping anchor loss", flush=True)
+        return []
+
+    try:
+        from src.evaluation.routing import build_sample_prompt, load_real_assets
+        from src.registry.contract_registry import ContractRegistry
+        from src.registry.tool_registry import ToolRegistry
+        real_assets = load_real_assets(data_dir)
+        tool_registry = ToolRegistry([])
+        contract_registry = ContractRegistry([])
+    except Exception as exc:
+        print(f"Could not load real_assets for anchor: {exc} — skipping", flush=True)
+        return []
+
+    samples = [json.loads(l) for l in path.open(encoding="utf-8") if l.strip()]
+    abstain = [s for s in samples if s.get("expected_action") == "abstain"]
+
+    anchor_data: list[dict] = []
+    for s in abstain:
+        try:
+            messages = build_sample_prompt(s, tool_registry, contract_registry, real_assets)
+            pred = s.get("prediction", {})
+            gold = (
+                json.dumps(pred, ensure_ascii=False)
+                if isinstance(pred, dict) and pred.get("action") == "abstain"
+                else json.dumps({"action": "abstain", "reason": "ngoài phạm vi công cụ KPI"}, ensure_ascii=False)
+            )
+            anchor_data.append({"messages": messages, "gold": gold})
+        except Exception:
+            continue
+
+    print(f"Loaded {len(anchor_data)} anchor abstain samples from {path}", flush=True)
+    return anchor_data
+
+
+def _compute_sft_nll(model: Any, tokenizer: Any, anchor: dict, dev: Any) -> Any:
+    import torch
+    import torch.nn.functional as F
+
+    try:
+        text = tokenizer.apply_chat_template(
+            anchor["messages"], tokenize=False, add_generation_prompt=True, enable_thinking=False
+        )
+    except TypeError:
+        text = tokenizer.apply_chat_template(
+            anchor["messages"], tokenize=False, add_generation_prompt=True
+        )
+
+    eos = tokenizer.eos_token or ""
+    gold_text = anchor["gold"] + eos
+    prompt_ids = tokenizer(text, return_tensors="pt")["input_ids"][0]
+    gold_ids = tokenizer(gold_text, add_special_tokens=False, return_tensors="pt")["input_ids"][0]
+    if len(gold_ids) == 0:
+        return torch.tensor(0.0, device=dev)
+
+    full_ids = torch.cat([prompt_ids, gold_ids]).unsqueeze(0).to(dev)
+    out = model(full_ids)
+    resp_start = len(prompt_ids) - 1
+    resp_logits = out.logits[0][resp_start: resp_start + len(gold_ids)]
+    return F.cross_entropy(resp_logits, gold_ids.to(dev))
+
+
+def _wandb_init(args: argparse.Namespace, cfg: Any) -> None:
+    if args.report_to != "wandb":
+        return
+    try:
+        import wandb
+        wandb.init(
+            project="telco-fc",
+            name="m5-vpd",
+            config={
+                "model": args.model,
+                "adapter": args.adapter,
+                "epochs": cfg.epochs,
+                "e_steps_per_cycle": cfg.e_steps_per_cycle,
+                "m_steps_per_cycle": cfg.m_steps_per_cycle,
+                "learning_rate_e": cfg.learning_rate_e,
+                "learning_rate_m": cfg.learning_rate_m,
+                "distillation_top_k": cfg.distillation_top_k,
+                "distillation_alpha": cfg.distillation_alpha,
+                "lambda_start": cfg.lambda_start,
+                "lambda_end": cfg.lambda_end,
+            },
+        )
+    except ImportError:
+        print("wandb not installed — skipping logging", flush=True)
+
+
+def _wlog(metrics: dict, step: int | None = None) -> None:
+    try:
+        import wandb
+        if wandb.run is not None:
+            wandb.log(metrics, step=step)
+    except ImportError:
+        pass
 
 
 def main() -> None:
@@ -330,6 +444,12 @@ def main() -> None:
 
     records = [json.loads(l) for l in rollout_path.open(encoding="utf-8") if l.strip()]
     print(f"Loaded {len(records)} rollout groups from {rollout_path}")
+
+    _wandb_init(args, cfg)
+
+    anchor_data: list[dict] = []
+    if args.anchor_file:
+        anchor_data = _load_anchor_samples(args.anchor_file, ROOT / "data")
 
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     if tokenizer.pad_token is None:
@@ -369,22 +489,32 @@ def main() -> None:
         print(f"\n--- Cycle {cycle+1}/{total_cycles}  lambda={lam:.3f} ---")
 
         # E-step(s)
+        e_loss_last = 0.0
         for e in range(cfg.e_steps_per_cycle):
-            e_loss = e_step(
+            e_loss_last = e_step(
                 teacher, student, tokenizer, records, cfg, opt_teacher, lam,
                 top_k=cfg.distillation_top_k,
             )
-            print(f"  E-step {e+1}/{cfg.e_steps_per_cycle}  loss={e_loss:.4f}")
+            print(f"  E-step {e+1}/{cfg.e_steps_per_cycle}  loss={e_loss_last:.4f}")
 
         # M-step(s)
+        m_loss_last = 0.0
         for m in range(cfg.m_steps_per_cycle):
-            m_loss = m_step(
+            m_loss_last = m_step(
                 student, teacher, tokenizer, records, cfg, opt_student,
                 top_k=cfg.distillation_top_k,
                 alpha=cfg.distillation_alpha,
                 is_clip=cfg.is_clip,
+                anchor_data=anchor_data,
+                anchor_weight=args.anchor_weight,
             )
-            print(f"  M-step {m+1}/{cfg.m_steps_per_cycle}  loss={m_loss:.4f}")
+            print(f"  M-step {m+1}/{cfg.m_steps_per_cycle}  loss={m_loss_last:.4f}")
+
+        _wlog({
+            "train/e_loss": e_loss_last,
+            "train/m_loss": m_loss_last,
+            "train/lambda": lam,
+        }, step=cycle + 1)
 
         # Save student after each cycle
         student.save_pretrained(str(output_dir))
@@ -421,7 +551,14 @@ def _load_config(args: argparse.Namespace) -> Any:
         "lambda_start": 0.3,
         "lambda_end": 0.9,
     }
-    for k, v in {**defaults, **raw}.items():
+    _float_fields = {"learning_rate_e", "learning_rate_m", "distillation_alpha",
+                     "is_clip", "teacher_trust_region_beta", "neg_loss_weight",
+                     "lambda_start", "lambda_end"}
+    merged = {**defaults, **raw}
+    for k, v in merged.items():
+        if k in _float_fields and isinstance(v, str):
+            merged[k] = float(v)
+    for k, v in merged.items():
         setattr(c, k, v)
     return c
 
@@ -435,6 +572,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--eval-file", default=None)
     p.add_argument("--output-dir", required=True)
     p.add_argument("--report-to", default="none")
+    p.add_argument("--anchor-file", default=None, help="Path to train file with abstain samples for anchor SFT loss")
+    p.add_argument("--anchor-weight", type=float, default=0.2)
     return p.parse_args()
 
 
