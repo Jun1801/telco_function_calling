@@ -13,8 +13,8 @@ LOGS_DIR="${LOGS_DIR:-/content/logs}"
 
 echo "=== Colab Setup ==="
 
-# Install dependencies
-pip install -q transformers peft accelerate datasets huggingface-hub trl bitsandbytes
+# Install dependencies (torchao>=0.16.0 required by peft)
+pip install -q transformers peft accelerate datasets huggingface-hub trl bitsandbytes "torchao>=0.16.0"
 
 # Create dirs
 mkdir -p "$MODEL_DIR" "$DATA_DIR" "$ADAPTER_DIR" "$REPORTS_DIR" "$LOGS_DIR"
