@@ -6,6 +6,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(it, **kwargs):  # type: ignore[misc]
+        total = kwargs.get("total", "?")
+        for i, x in enumerate(it, 1):
+            print(f"\r  {i}/{total}", end="", flush=True)
+            yield x
+        print()
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -54,7 +64,8 @@ def main() -> None:
         samples = [s for s in samples if not is_real_sample(s)]
 
     records = []
-    for sample in samples[: args.limit]:
+    run_samples = samples[: args.limit]
+    for sample in tqdm(run_samples, total=len(run_samples), desc="eval", unit="sample"):
         prompt = build_sample_prompt(sample, tool_registry, contract_registry, real_assets)
         raw_output = generator.generate(sample, prompt)
         prediction = parse_model_output(raw_output)
