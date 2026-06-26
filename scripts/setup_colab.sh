@@ -55,10 +55,17 @@ echo "Populating data/ directory..."
 REPO_DATA="$REPO_DIR/data"
 mkdir -p "$REPO_DATA"
 
+# Helper: remove dangling/old symlinks before copying
+_safe_cp() {
+    local src="$1" dst="$2"
+    [ -L "$dst" ] && rm -f "$dst"   # remove dangling symlink if present
+    cp "$src" "$dst"
+}
+
 # Real tool schemas (needed by load_real_assets)
-cp "$DATA_DIR/dataset/schemas/real_tools.json"           "$REPO_DATA/real_tools.json"
-cp "$DATA_DIR/dataset/schemas/real_reference_codes.json" "$REPO_DATA/real_reference_codes.json"
-cp "$DATA_DIR/dataset/schemas/real_station_catalogue.json" "$REPO_DATA/real_station_catalogue.json" 2>/dev/null || true
+_safe_cp "$DATA_DIR/dataset/schemas/real_tools.json"           "$REPO_DATA/real_tools.json"
+_safe_cp "$DATA_DIR/dataset/schemas/real_reference_codes.json" "$REPO_DATA/real_reference_codes.json"
+{ [ -f "$DATA_DIR/dataset/schemas/real_station_catalogue.json" ] && _safe_cp "$DATA_DIR/dataset/schemas/real_station_catalogue.json" "$REPO_DATA/real_station_catalogue.json"; } || true
 
 # Eval splits: rename eval/<name>.jsonl → eval_real_<name>.jsonl
 # NOTE: the HF dataset eval/ files already include hard splits merged in
@@ -67,7 +74,7 @@ cp "$DATA_DIR/dataset/schemas/real_station_catalogue.json" "$REPO_DATA/real_stat
 for split in seen unseen masked missing_slot multi_step parallel abstain; do
     src="$DATA_DIR/dataset/eval/$split.jsonl"
     dst="$REPO_DATA/eval_real_$split.jsonl"
-    [ -f "$src" ] && cp "$src" "$dst" && echo "  copied eval_real_$split.jsonl ($(wc -l < $dst) samples)"
+    [ -f "$src" ] && _safe_cp "$src" "$dst" && echo "  copied eval_real_$split.jsonl ($(wc -l < $dst) samples)"
 done
 
 # Download adapters
