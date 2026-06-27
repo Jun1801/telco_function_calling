@@ -12,7 +12,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from src.retrieval.tool_retriever import ToolRetriever
 
 from src.evaluation.evaluator import evaluate_prediction
 from src.evaluation.real_evaluator import evaluate_real_prediction
@@ -50,13 +53,15 @@ def build_sample_prompt(
     tool_registry: ToolRegistry,
     contract_registry: ContractRegistry,
     real_assets: RealAssets | None,
+    retriever: Any = None,
 ) -> list[dict[str, str]]:
     extra = [sample["masked_tool"]] if sample.get("masked_tool") else None
     if is_real_sample(sample) and real_assets:
         # Real = read-only → no contract context; inject reference codes for name↔code mapping.
         return build_prompt_messages(sample, real_assets.registry, None, extra_tools=extra,
-                                     references=real_assets.references)
-    return build_prompt_messages(sample, tool_registry, contract_registry, extra_tools=extra)
+                                     references=real_assets.references, retriever=retriever)
+    return build_prompt_messages(sample, tool_registry, contract_registry, extra_tools=extra,
+                                 retriever=retriever)
 
 
 def evaluate_sample(

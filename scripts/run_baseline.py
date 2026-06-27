@@ -44,6 +44,8 @@ def main() -> None:
     parser.add_argument("--enable-thinking", action="store_true", help="Pass enable_thinking=True when the tokenizer supports it.")
     parser.add_argument("--output", default=str(ROOT / "reports" / "prompt_only_results.jsonl"))
     parser.add_argument("--error-report", default=str(ROOT / "reports" / "error_analysis.md"))
+    parser.add_argument("--retrieval", action="store_true",
+                        help="Use BM25 retrieval instead of gold-seeded tool selection (realistic blind inference).")
     args = parser.parse_args()
 
     data_dir = ROOT / "data"
@@ -55,6 +57,12 @@ def main() -> None:
     tool_registry = ToolRegistry.from_file(_tools_path) if _tools_path.exists() else ToolRegistry([])
     contract_registry = ContractRegistry.from_file(_contracts_path) if _contracts_path.exists() else ContractRegistry([])
     real_assets = load_real_assets(data_dir)
+    retriever = None
+    if args.retrieval:
+        from src.retrieval.tool_retriever import ToolRetriever
+        if real_assets is not None:
+            retriever = ToolRetriever.from_registry(real_assets.registry)
+            print(f"BM25 retriever initialized ({len(real_assets.registry.all_names())} tools)")
     generator = _build_generator(args)
 
     samples = _iter_eval_samples(data_dir)
@@ -66,7 +74,7 @@ def main() -> None:
     records = []
     run_samples = samples[: args.limit]
     for sample in tqdm(run_samples, total=len(run_samples), desc="eval", unit="sample"):
-        prompt = build_sample_prompt(sample, tool_registry, contract_registry, real_assets)
+        prompt = build_sample_prompt(sample, tool_registry, contract_registry, real_assets, retriever=retriever)
         raw_output = generator.generate(sample, prompt)
         prediction = parse_model_output(raw_output)
         result = evaluate_sample(

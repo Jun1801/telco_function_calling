@@ -15,8 +15,13 @@ def build_prompt_messages(
     max_tools: int = 8,
     extra_tools: list[dict[str, Any]] | None = None,
     references: dict[str, Any] | None = None,
+    retriever: Any = None,
 ) -> list[dict[str, str]]:
-    tools = _select_prompt_tools(sample, tool_registry, max_tools)
+    if retriever is not None:
+        # Blind retrieval: no gold seeding — realistic inference mode
+        tools = retriever.retrieve(sample.get("instruction", ""), k=max_tools)
+    else:
+        tools = _select_prompt_tools(sample, tool_registry, max_tools)
     if extra_tools:
         # Inject tools not resolvable from the registry (e.g. a masked func_X
         # schema embedded in the sample). Prepended; deduped by name. Project to
