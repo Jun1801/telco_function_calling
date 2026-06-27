@@ -33,6 +33,7 @@ python scripts/train_vpd_hf.py \
   --config configs/vpd.yaml \
   --anchor-file "$ANCHOR_FILE" \
   --anchor-weight 0.2 \
+  --max-records-per-step "${MAX_RECORDS_PER_STEP:-500}" \
   --report-to "${REPORT_TO:-wandb}" \
   2>&1 | tee logs/m5_train.log
 

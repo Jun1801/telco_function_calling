@@ -128,10 +128,13 @@ def e_step(
     opt_teacher: Any,
     lam: float,
     top_k: int,
+    max_records: int | None = None,
 ) -> float:
     """Update teacher using reward signal + KL(teacher || student) trust-region."""
+    import random
     import torch
     import torch.nn.functional as F
+    from tqdm import tqdm
 
     dev = next(teacher_model.parameters()).device
     total_loss = 0.0
@@ -140,7 +143,10 @@ def e_step(
     teacher_model.train()
     student_model.eval()
 
-    for record in records:
+    if max_records and len(records) > max_records:
+        records = random.sample(records, max_records)
+
+    for record in tqdm(records, desc="E-step", leave=False):
         rollouts = record["rollouts"]
         best_idx = record.get("best_idx", -1)
         if best_idx < 0 or best_idx >= len(rollouts):
@@ -223,11 +229,13 @@ def m_step(
     is_clip: float,
     anchor_data: list[dict] | None = None,
     anchor_weight: float = 0.2,
+    max_records: int | None = None,
 ) -> float:
     """Distill teacher→student (top-k JSD with IS correction)."""
     import random
     import torch
     import torch.nn.functional as F
+    from tqdm import tqdm
 
     dev = next(student_model.parameters()).device
     total_loss = 0.0
@@ -239,7 +247,10 @@ def m_step(
 
     opt_student.zero_grad()
 
-    for step_idx, record in enumerate(records):
+    if max_records and len(records) > max_records:
+        records = random.sample(records, max_records)
+
+    for step_idx, record in enumerate(tqdm(records, desc="M-step", leave=False)):
         rollouts = record["rollouts"]
         best_idx = record.get("best_idx", -1)
         if best_idx < 0 or best_idx >= len(rollouts):
@@ -456,16 +467,26 @@ def main() -> None:
         tokenizer.pad_token = tokenizer.eos_token
 
     print(f"Loading base model {args.model} ...")
-    base_teacher = AutoModelForCausalLM.from_pretrained(
-        args.model, device_map="auto", torch_dtype=torch.bfloat16, trust_remote_code=True
-    )
-    base_student = AutoModelForCausalLM.from_pretrained(
-        args.model, device_map="auto", torch_dtype=torch.bfloat16, trust_remote_code=True
-    )
+    _model_kwargs: dict = dict(device_map="auto", dtype=torch.bfloat16, trust_remote_code=True)
+    try:
+        import flash_attn  # noqa: F401
+        _model_kwargs["attn_implementation"] = "flash_attention_2"
+        print("  Using flash_attention_2")
+    except ImportError:
+        print("  flash-attn not installed — using default attention (slower)")
+
+    base_teacher = AutoModelForCausalLM.from_pretrained(args.model, **_model_kwargs)
+    base_student = AutoModelForCausalLM.from_pretrained(args.model, **_model_kwargs)
 
     # Both teacher and student start from M1b adapter
     teacher = PeftModel.from_pretrained(base_teacher, args.adapter, is_trainable=True)
     student = PeftModel.from_pretrained(base_student, args.adapter, is_trainable=True)
+
+    # Gradient checkpointing: reduces O(n²) attention activation memory at ~1.2× compute cost
+    teacher.enable_input_require_grads()
+    teacher.gradient_checkpointing_enable()
+    student.enable_input_require_grads()
+    student.gradient_checkpointing_enable()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -494,8 +515,11 @@ def main() -> None:
             e_loss_last = e_step(
                 teacher, student, tokenizer, records, cfg, opt_teacher, lam,
                 top_k=cfg.distillation_top_k,
+                max_records=args.max_records_per_step,
             )
             print(f"  E-step {e+1}/{cfg.e_steps_per_cycle}  loss={e_loss_last:.4f}")
+
+        torch.cuda.empty_cache()
 
         # M-step(s)
         m_loss_last = 0.0
@@ -507,6 +531,7 @@ def main() -> None:
                 is_clip=cfg.is_clip,
                 anchor_data=anchor_data,
                 anchor_weight=args.anchor_weight,
+                max_records=args.max_records_per_step,
             )
             print(f"  M-step {m+1}/{cfg.m_steps_per_cycle}  loss={m_loss_last:.4f}")
 
@@ -574,6 +599,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--report-to", default="none")
     p.add_argument("--anchor-file", default=None, help="Path to train file with abstain samples for anchor SFT loss")
     p.add_argument("--anchor-weight", type=float, default=0.2)
+    p.add_argument("--max-records-per-step", type=int, default=500,
+                   help="Sub-sample rollout records per E/M step (default 500, None=all)")
     return p.parse_args()
 
 
