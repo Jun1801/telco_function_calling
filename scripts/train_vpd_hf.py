@@ -198,8 +198,8 @@ def e_step(
         if reward >= cfg.success_threshold:
             reward_loss = lam * reward * nll
         else:
-            # Negative trajectory: small push-away (min probability of this bad action)
-            reward_loss = cfg.neg_loss_weight * nll
+            # Negative trajectory: push AWAY (maximize NLL = minimize -NLL)
+            reward_loss = -cfg.neg_loss_weight * nll
 
         # KL(teacher || student) trust-region penalty
         kl_penalty = compute_top_k_kl(teacher_resp_lp, student_resp_lp, top_k)
@@ -478,9 +478,12 @@ def main() -> None:
     base_teacher = AutoModelForCausalLM.from_pretrained(args.model, **_model_kwargs)
     base_student = AutoModelForCausalLM.from_pretrained(args.model, **_model_kwargs)
 
-    # Both teacher and student start from M1b adapter
+    # Asymmetric init: teacher from --adapter, student from --student-adapter (or same)
     teacher = PeftModel.from_pretrained(base_teacher, args.adapter, is_trainable=True)
-    student = PeftModel.from_pretrained(base_student, args.adapter, is_trainable=True)
+    student_path = args.student_adapter or args.adapter
+    student = PeftModel.from_pretrained(base_student, student_path, is_trainable=True)
+    if args.student_adapter:
+        print(f"  Asymmetric init: teacher={args.adapter}, student={student_path}")
 
     # Gradient checkpointing: reduces O(n²) attention activation memory at ~1.2× compute cost
     teacher.enable_input_require_grads()
@@ -592,7 +595,9 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--config", default=str(ROOT / "configs" / "vpd.yaml"))
     p.add_argument("--model", required=True)
-    p.add_argument("--adapter", required=True, help="M1b adapter (student + teacher start)")
+    p.add_argument("--adapter", required=True, help="Teacher adapter (stronger model)")
+    p.add_argument("--student-adapter", default=None,
+                   help="Student adapter start point (default: same as --adapter)")
     p.add_argument("--rollouts", default=str(ROOT / "data" / "sdpo_rollouts_m4.jsonl"))
     p.add_argument("--eval-file", default=None)
     p.add_argument("--output-dir", required=True)
