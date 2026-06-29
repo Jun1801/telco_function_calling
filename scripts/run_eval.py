@@ -34,8 +34,10 @@ def main() -> None:
     if not sample_paths:
         raise SystemExit("No eval_*.jsonl datasets found. Run python scripts/generate_data.py first.")
 
-    tool_registry = ToolRegistry.from_file(data_dir / "tools.json")
-    contract_registry = ContractRegistry.from_file(data_dir / "tool_contracts.json")
+    tools_path = data_dir / "tools.json"
+    contracts_path = data_dir / "tool_contracts.json"
+    tool_registry = ToolRegistry.from_file(tools_path) if tools_path.exists() else ToolRegistry([])
+    contract_registry = ContractRegistry.from_file(contracts_path) if contracts_path.exists() else ContractRegistry([])
     real_assets = load_real_assets(data_dir)
 
     total = 0

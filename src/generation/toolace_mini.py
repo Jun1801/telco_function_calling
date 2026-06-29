@@ -84,8 +84,10 @@ class DualLayerValidationProcess:
     def __init__(self, data_dir: str | Path) -> None:
         data_path = Path(data_dir)
         self.data_dir = data_path
-        self.tool_registry = ToolRegistry.from_file(data_path / "tools.json")
-        self.contract_registry = ContractRegistry.from_file(data_path / "tool_contracts.json")
+        tools_path = data_path / "tools.json"
+        contracts_path = data_path / "tool_contracts.json"
+        self.tool_registry = ToolRegistry.from_file(tools_path) if tools_path.exists() else ToolRegistry([])
+        self.contract_registry = ContractRegistry.from_file(contracts_path) if contracts_path.exists() else ContractRegistry([])
 
     def verify(self, samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
         verified: list[dict[str, Any]] = []

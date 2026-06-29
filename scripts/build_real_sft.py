@@ -54,8 +54,10 @@ def main() -> None:
     args = ap.parse_args()
     rng = random.Random(args.seed)
 
-    tool_reg = ToolRegistry.from_file(DATA / "tools.json")
-    contract_reg = ContractRegistry.from_file(DATA / "tool_contracts.json")
+    tools_path = DATA / "tools.json"
+    contracts_path = DATA / "tool_contracts.json"
+    tool_reg = ToolRegistry.from_file(tools_path) if tools_path.exists() else ToolRegistry([])
+    contract_reg = ContractRegistry.from_file(contracts_path) if contracts_path.exists() else ContractRegistry([])
     real_assets = load_real_assets(DATA)
     if real_assets is None:
         sys.exit("real_tools.json missing — run scripts/parse_function_xlsx.py first")

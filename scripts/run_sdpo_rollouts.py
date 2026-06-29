@@ -36,10 +36,12 @@ REAL_SOURCE = "real_tool_xlsx"  # marks samples from data/real_tools.json (read-
 def main() -> None:
     args = _parse_args()
     data_dir = ROOT / "data"
-
-    tool_registry = ToolRegistry.from_file(data_dir / "tools.json")
-    contract_registry = ContractRegistry.from_file(data_dir / "tool_contracts.json")
-    mock_api = MockTelcoApi.from_file(data_dir / "mock_telco_db.json")
+    tools_path = data_dir / "tools.json"
+    contracts_path = data_dir / "tool_contracts.json"
+    db_path = data_dir / "mock_telco_db.json"
+    tool_registry = ToolRegistry.from_file(tools_path) if tools_path.exists() else ToolRegistry([])
+    contract_registry = ContractRegistry.from_file(contracts_path) if contracts_path.exists() else ContractRegistry([])
+    mock_api = MockTelcoApi.from_file(db_path) if db_path.exists() else None
 
     # Real read-only KPI tools (separate registry + schema-only evaluator + code tables; no contracts).
     real_registry = real_refs = None

@@ -14,7 +14,8 @@ from src.registry.tool_registry import ToolRegistry
 
 def main() -> None:
     data_dir = ROOT / "data"
-    tool_registry = ToolRegistry.from_file(data_dir / "tools.json")
+    tools_path = data_dir / "tools.json"
+    tool_registry = ToolRegistry.from_file(tools_path) if tools_path.exists() else ToolRegistry([])
     train_records: list[dict[str, Any]] = []
     eval_records: list[dict[str, Any]] = []
 
