@@ -82,7 +82,10 @@ echo "Downloading adapters..."
 _hf_download Jun1801/telco-fc-m1b-qwen3-4b model "$ADAPTER_DIR/m1"
 _hf_download Jun1801/telco-fc-m2b-qwen3-4b model "$ADAPTER_DIR/m2"
 _hf_download Jun1801/telco-fc-m3b-qwen3-4b model "$ADAPTER_DIR/m3"
+_hf_download Jun1801/telco-fc-m4b-qwen3-4b model "$ADAPTER_DIR/m4"
+_hf_download Jun1801/telco-fc-m5b-qwen3-4b model "$ADAPTER_DIR/m5"
 _hf_download Jun1801/telco-fc-m3b-test      model "$ADAPTER_DIR/m3-test"
+
 
 echo ""
 echo "=== Setup complete ==="
