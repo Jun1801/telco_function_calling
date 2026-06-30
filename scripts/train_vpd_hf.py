@@ -93,7 +93,6 @@ def e_step(
     records: list[dict],
     cfg: Any,
     opt_teacher: Any,
-    lam: float,
     top_k: int,
     max_records: int | None = None,
 ) -> float:
@@ -216,12 +215,10 @@ def e_step(
                 group_loss = group_loss + (-F.logsigmoid(-(implicit_reward - delta)))
         group_loss = group_loss / len(group_entries)
 
-        # KL trust-region penalty using last rollout's distributions (Eq. A.22)
-        last_teacher_lp = group_entries[-1][2].detach()  # full vocab log-probs, no grad for penalty
+        # KL trust-region penalty on last rollout's distributions (Eq. A.22)
         last_student_lp = group_entries[-1][3].detach()
-        # Recompute teacher with grad for the penalty
         kl_penalty = compute_top_k_kl(
-            group_entries[-1][2],  # teacher_resp_lp with grad
+            group_entries[-1][2],  # teacher_resp_lp (has grad)
             last_student_lp,
             top_k,
         )
@@ -257,8 +254,8 @@ def m_step(
 
     Forward KL(student || teacher) per token, no IS correction.
     Teacher uses feedback context; student uses prompt only.
-    loss = mean_t [log π_student(y_t|x,y<t) - log q_teacher(y_t|x,C,y<t)]
-    Minimise → student distribution approaches teacher distribution.
+    loss = mean_t [log q_teacher(y_t|x,C,y<t) - log π_student(y_t|x,y<t)]
+    Minimise (≥0 when student < teacher) → student_lp rises toward teacher_lp.
     """
     import random
     import torch
@@ -343,10 +340,9 @@ def m_step(
             1, response_ids.unsqueeze(1)
         ).squeeze(1)  # (n_resp,)
 
-        # Forward KL(student || teacher) at rollout token positions (Eq. 10 simplified)
-        # loss = mean_t [log π_student(y_t) - log q_teacher(y_t)]
-        # Minimising → student_lp approaches teacher_lp
-        loss = (student_token_lp - teacher_token_lp.detach()).mean()
+        # Forward KL distillation: minimize teacher_lp - student_lp (≥0 when student<teacher)
+        # Gradient pushes student_lp UP toward teacher_lp; converges to 0 at student=teacher
+        loss = (teacher_token_lp.detach() - student_token_lp).mean()
 
         loss.backward()
         total_loss += loss.item()
@@ -548,7 +544,7 @@ def main() -> None:
         e_loss_last = 0.0
         for e in range(cfg.e_steps_per_cycle):
             e_loss_last = e_step(
-                teacher, student, tokenizer, records, cfg, opt_teacher, lam,
+                teacher, student, tokenizer, records, cfg, opt_teacher,
                 top_k=cfg.distillation_top_k,
                 max_records=args.max_records_per_step,
             )
