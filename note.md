@@ -9,3 +9,7 @@
 
 - test: 1000-1500 samples
 - 
+- Ablation hơn (reward)
+- Xây pipeline tự động hoá từ đấu đến cuối (tư training, tự sinh dữ liêu)
+- Bước sinh dữ liệu cần làm sao để đảm bảo validations tốt nhất
+- Retrieval
