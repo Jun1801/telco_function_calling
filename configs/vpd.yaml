@@ -37,7 +37,8 @@ epochs: 3
 # E-step (teacher update)
 learning_rate_e: 1.0e-5
 teacher_trust_region_beta: 0.02    # KL(teacher || student) penalty coefficient
-neg_loss_weight: 0.5               # weight for negative trajectory loss
+bco_beta: 0.5                      # β in implicit reward r̃ = β*(log q_teacher - log π_student)
+neg_loss_weight: 0.5               # unused (kept for compat)
 
 # M-step (student distillation)
 learning_rate_m: 5.0e-6
