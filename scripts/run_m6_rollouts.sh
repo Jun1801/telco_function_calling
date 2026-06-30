@@ -21,6 +21,12 @@ echo "  Input  : $INPUT"
 echo "  Output : $OUTPUT"
 echo ""
 
+RESUME="${RESUME:-false}"
+EXTRA_ARGS=""
+if [ "$RESUME" = "true" ]; then
+  EXTRA_ARGS="--resume"
+fi
+
 python scripts/run_sdpo_rollouts_hf.py \
   --model "$MODEL" \
   --adapter "$ADAPTER" \
@@ -30,6 +36,7 @@ python scripts/run_sdpo_rollouts_hf.py \
   --temperature "$TEMPERATURE" \
   --max-new-tokens 512 \
   --success-threshold 1.0 \
+  $EXTRA_ARGS \
   2>&1 | tee logs/m6_rollouts.log
 
 echo ""

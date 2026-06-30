@@ -58,9 +58,28 @@ def main() -> None:
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    processed_ids = set()
     skipped = kept = 0
-    with out_path.open("w", encoding="utf-8") as fout:
+
+    if args.resume and out_path.exists():
+        print(f"Resuming from existing output: {out_path}")
+        with out_path.open("r", encoding="utf-8") as fin:
+            for line in fin:
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                    processed_ids.add(record["id"])
+                    kept += 1
+                except Exception:
+                    pass
+        print(f"Found {len(processed_ids)} already processed samples.")
+
+    open_mode = "a" if (args.resume and out_path.exists()) else "w"
+    with out_path.open(open_mode, encoding="utf-8") as fout:
         for idx, sample in enumerate(samples):
+            if sample["id"] in processed_ids:
+                continue
             messages = build_sample_prompt(sample, tool_registry, contract_registry, real_assets)
             prompt_text = tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True,
@@ -129,6 +148,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--temperature", type=float, default=0.8)
     p.add_argument("--max-new-tokens", type=int, default=512)
     p.add_argument("--success-threshold", type=float, default=1.0)
+    p.add_argument("--resume", action="store_true", help="Resume from existing output if present")
     return p.parse_args()
 
 
